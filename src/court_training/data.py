@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 import torch
@@ -8,8 +9,13 @@ from torch.utils.data import Dataset
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, MASK_NAMES
 
 
+class Transform(Protocol):
+    def __call__(self, image: Image.Image, bitfield: np.ndarray) -> tuple[Image.Image, np.ndarray]: ...
+
+
 class MaskDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
-    def __init__(self, root: Path, dataset_names: tuple[str, ...]) -> None:
+    def __init__(self, root: Path, dataset_names: tuple[str, ...], transform: Transform | None = None) -> None:
+        self.transform = transform
         self.items = image_mask_pairs(root, dataset_names)
         if not self.items:
             raise ValueError(f"No image/mask pairs found under {root}")
@@ -21,6 +27,8 @@ class MaskDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         image_path, mask_path = self.items[index]
         image = Image.open(image_path).convert("RGB")
         bitfield = np.asarray(Image.open(mask_path).convert("L"), dtype=np.uint8)
+        if self.transform:
+            image, bitfield = self.transform(image, bitfield)
         return image_to_tensor(image), bitfield_to_masks(bitfield)
 
 

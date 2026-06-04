@@ -28,3 +28,20 @@ dataset-root/
 ```
 
 Mask files are grayscale WebP bitfields. Bit `0..5` maps to the mask order above.
+
+## Train
+
+```bash
+uv run train-basket-court /path/to/exported-dataset /path/to/checkpoints
+```
+
+## Inference
+
+```python
+from court_training.inference import CourtSegmenter
+
+segmenter = CourtSegmenter.from_checkpoint("checkpoints/best.pt")
+probabilities = segmenter.predict_proba("frame.jpg")
+masks = segmenter.predict_masks("frame.jpg")
+bitfield = segmenter.predict_bitfield("frame.jpg")
+```

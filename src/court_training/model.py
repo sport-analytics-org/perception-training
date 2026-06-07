@@ -51,20 +51,15 @@ class DinoSegmenter(nn.Module):
         image: Image.Image,
         scales: tuple[float, ...],
     ) -> Float[torch.Tensor, "N H W"]:
-        was_training = self.training
-        self.eval()
-        try:
-            images = image_to_tensor(image.convert("RGB")).unsqueeze(0).to(self.device)
-            output_size = images.shape[-2:]
-            logits_by_scale = []
-            for scale in scales:
-                scaled_images = resize_images(images, scale)
-                logits = self(scaled_images)
-                logits = (logits + self.predict_flipped(scaled_images)) / 2
-                logits_by_scale.append(F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False))
-            return torch.stack(logits_by_scale).mean(dim=0).squeeze(0)
-        finally:
-            self.train(was_training)
+        images = image_to_tensor(image.convert("RGB")).unsqueeze(0).to(self.device)
+        output_size = images.shape[-2:]
+        logits_by_scale = []
+        for scale in scales:
+            scaled_images = resize_images(images, scale)
+            logits = self(scaled_images)
+            logits = (logits + self.predict_flipped(scaled_images)) / 2
+            logits_by_scale.append(F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False))
+        return torch.stack(logits_by_scale).mean(dim=0).squeeze(0)
 
     def predict_flipped(
         self,

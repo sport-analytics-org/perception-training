@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, MASK_NAMES
 
 
-class MaskDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
+class MaskDataset(Dataset):
     def __init__(self, root: Path, dataset_names: tuple[str, ...]) -> None:
         self.items = image_mask_pairs(root, dataset_names)
         if not self.items:

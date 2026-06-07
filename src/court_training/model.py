@@ -5,13 +5,19 @@ from PIL import Image
 from torch import nn
 from torch.nn import functional as F
 
-from court_training.constants import LEFT_RIGHT_PAIRS, MASK_NAMES
 from court_training.dataset import image_to_tensor
 
 
 class DinoSegmenter(nn.Module):
-    def __init__(self, backbone: str = "vit_large_patch16_dinov3", pretrained: bool = True) -> None:
+    def __init__(
+        self,
+        num_masks: int,
+        left_right_pairs: tuple[tuple[int, int], ...] = (),
+        backbone: str = "vit_large_patch16_dinov3",
+        pretrained: bool = True,
+    ) -> None:
         super().__init__()
+        self.left_right_pairs = left_right_pairs
         self.backbone = timm.create_model(backbone, pretrained=pretrained, num_classes=0, dynamic_img_size=True)
         self.decoder = nn.Sequential(
             nn.Conv2d(self.backbone.embed_dim, 256, kernel_size=3, padding=1),
@@ -20,7 +26,7 @@ class DinoSegmenter(nn.Module):
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.GELU(),
-            nn.Conv2d(256, len(MASK_NAMES), kernel_size=1),
+            nn.Conv2d(256, num_masks, kernel_size=1),
         )
 
     def forward(
@@ -67,7 +73,7 @@ class DinoSegmenter(nn.Module):
     ) -> Float[torch.Tensor, "B N H W"]:
         logits = self(torch.flip(images, dims=(-1,)))
         logits = torch.flip(logits, dims=(-1,))
-        return swap_left_right_channels(logits)
+        return swap_left_right_channels(logits, self.left_right_pairs)
 
     @property
     def device(self) -> torch.device:
@@ -80,9 +86,9 @@ def resize_images(images: torch.Tensor, scale: float) -> torch.Tensor:
     return F.interpolate(images, scale_factor=scale, mode="bilinear", align_corners=False)
 
 
-def swap_left_right_channels(tensor: torch.Tensor) -> torch.Tensor:
+def swap_left_right_channels(tensor: torch.Tensor, left_right_pairs: tuple[tuple[int, int], ...]) -> torch.Tensor:
     swapped = tensor.clone()
-    for left, right in LEFT_RIGHT_PAIRS:
+    for left, right in left_right_pairs:
         swapped[:, left] = tensor[:, right]
         swapped[:, right] = tensor[:, left]
     return swapped

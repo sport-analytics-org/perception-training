@@ -1,13 +1,18 @@
+from collections.abc import Callable
 from pathlib import Path
-from typing import TypedDict
+from typing import Protocol, TypedDict
 
 import numpy as np
 import torch
-from jaxtyping import Float, UInt8
+from jaxtyping import Float
 from PIL import Image
 from torch.utils.data import Dataset
 
-from court_training.constants import IMAGE_MEAN, IMAGE_STD, MASK_NAMES
+from court_training.constants import IMAGE_MEAN, IMAGE_STD
+
+
+class Transform(Protocol):
+    def __call__(self, image: Image.Image, bitfield: np.ndarray) -> tuple[Image.Image, np.ndarray]: ...
 
 
 class MaskSample(TypedDict):
@@ -16,7 +21,14 @@ class MaskSample(TypedDict):
 
 
 class MaskDataset(Dataset):
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        load_mask: Callable[[np.ndarray], Float[torch.Tensor, "N H W"]],
+        transform: Transform | None = None,
+    ) -> None:
+        self.load_mask = load_mask
+        self.transform = transform
         self.items = image_mask_pairs(root)
         if not self.items:
             raise ValueError(f"No image/mask pairs found under {root}")
@@ -28,7 +40,9 @@ class MaskDataset(Dataset):
         image_path, mask_path = self.items[index]
         image = Image.open(image_path).convert("RGB")
         bitfield = np.asarray(Image.open(mask_path).convert("L"), dtype=np.uint8)
-        return {"image": image_to_tensor(image), "mask": bitfield_to_masks(bitfield)}
+        if self.transform:
+            image, bitfield = self.transform(image, bitfield)
+        return {"image": image_to_tensor(image), "mask": self.load_mask(bitfield)}
 
 
 def image_mask_pairs(root: Path) -> list[tuple[Path, Path]]:
@@ -46,8 +60,3 @@ def image_to_tensor(image: Image.Image) -> Float[torch.Tensor, "3 H W"]:
     array = np.asarray(image, dtype=np.float32) / 255.0
     image_tensor = torch.from_numpy(array).permute(2, 0, 1)
     return (image_tensor - IMAGE_MEAN) / IMAGE_STD
-
-
-def bitfield_to_masks(bitfield: UInt8[np.ndarray, "H W"]) -> Float[torch.Tensor, "N H W"]:
-    masks = [(bitfield & (1 << bit)) > 0 for bit in range(len(MASK_NAMES))]
-    return torch.from_numpy(np.stack(masks).astype(np.float32))

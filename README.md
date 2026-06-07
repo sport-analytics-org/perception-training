@@ -27,3 +27,13 @@ uv run python scripts/export_dataset.py /path/to/output \
   --train-source /path/to/borgo \
   --val-source /path/to/e_bard_detection
 ```
+
+## Homography fitting
+
+Fit a centered-initialization homography to a labeled basketball raster mask:
+
+```bash
+uv run python scripts/fit_homography.py /path/to/mask.webp --court fiba
+```
+
+The script reads raster bitfield masks directly and prints the fitted homography plus initial/final IoU.

@@ -1,5 +1,4 @@
 import random
-from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -13,9 +12,9 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from court_training.augment import CourtAugment
+from court_training.augment import ComposeSampleTransforms, CourtAugment, ResizeSample
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
-from court_training.dataset import MaskDataset, MaskSample
+from court_training.dataset import MaskDataset
 from court_training.model import DinoSegmenter, resize_images
 
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
@@ -56,27 +55,25 @@ def main(
     set_seed(seed)
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    collate = partial(collate_samples, image_size=(image_height, image_width))
+    resize = ResizeSample((image_height, image_width))
 
     train_data = MaskDataset(
         train_root.expanduser().resolve(),
         load_mask=load_mask,
-        transform=CourtAugment(BASKETBALL_LEFT_RIGHT_PAIRS, crop_cutout),
+        transform=ComposeSampleTransforms((CourtAugment(BASKETBALL_LEFT_RIGHT_PAIRS, crop_cutout), resize)),
     )
-    eval_data = MaskDataset(val_root.expanduser().resolve(), load_mask=load_mask)
+    eval_data = MaskDataset(val_root.expanduser().resolve(), load_mask=load_mask, transform=resize)
     train_loader = DataLoader(
         train_data,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=collate,
     )
     eval_loader = DataLoader(
         eval_data,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        collate_fn=collate,
     )
 
     device = training_device()
@@ -178,32 +175,12 @@ def load_mask(bitfield: UInt8[np.ndarray, "H W"]) -> Float[np.ndarray, "H W N"]:
     return np.stack(masks, axis=-1).astype(np.float32)
 
 
-def collate_samples(samples: list[MaskSample], image_size: tuple[int, int]) -> dict[str, Tensor]:
-    images = []
-    masks = []
-    for sample in samples:
-        image, mask = resize_sample(sample, image_size)
-        images.append(image)
-        masks.append(mask)
-    return {"image": torch.stack(images), "mask": torch.stack(masks)}
-
-
-def resize_sample(sample: MaskSample, size: tuple[int, int]) -> tuple[Float[Tensor, "3 H W"], Float[Tensor, "N H W"]]:
-    image_array = np.array(sample["image"], copy=True)
-    mask_array = np.array(sample["mask"], copy=True)
-    image = torch.from_numpy(image_array).permute(2, 0, 1).float() / 255.0
-    mask = torch.from_numpy(mask_array).permute(2, 0, 1).float()
-    image = F.interpolate(image.unsqueeze(0), size=size, mode="bilinear", align_corners=False).squeeze(0)
-    mask = F.interpolate(mask.unsqueeze(0), size=size, mode="nearest").squeeze(0)
-    return image, mask
-
-
 def batch_to_tensors(
     batch: dict[str, Tensor],
     device: torch.device,
 ) -> tuple[Float[Tensor, "B 3 H W"], Float[Tensor, "B N H W"]]:
-    images = batch["image"].to(device=device, dtype=torch.float32)
-    masks = batch["mask"].to(device=device, dtype=torch.float32)
+    images = batch["image"].to(device=device, dtype=torch.float32).permute(0, 3, 1, 2) / 255.0
+    masks = batch["mask"].to(device=device, dtype=torch.float32).permute(0, 3, 1, 2)
     images = (images - IMAGE_MEAN.to(device)) / IMAGE_STD.to(device)
     return images, masks
 

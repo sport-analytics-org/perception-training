@@ -18,8 +18,8 @@ class MaskSample(TypedDict):
 
 
 class MaskDataset(Dataset):
-    def __init__(self, root: Path, dataset_names: tuple[str, ...]) -> None:
-        self.items = image_mask_pairs(root, dataset_names)
+    def __init__(self, root: Path) -> None:
+        self.items = image_mask_pairs(root)
         if not self.items:
             raise ValueError(f"No image/mask pairs found under {root}")
 
@@ -33,15 +33,14 @@ class MaskDataset(Dataset):
         return {"image": image_to_tensor(image), "mask": bitfield_to_masks(bitfield)}
 
 
-def image_mask_pairs(root: Path, dataset_names: tuple[str, ...]) -> list[tuple[Path, Path]]:
+def image_mask_pairs(root: Path) -> list[tuple[Path, Path]]:
     pairs = []
-    for dataset_name in dataset_names:
-        image_root = root / dataset_name / "images"
-        mask_root = root / dataset_name / "masks"
-        for image_path in sorted(image_root.glob("*/*.jpg")):
-            mask_path = mask_root / image_path.relative_to(image_root).with_suffix(".webp")
-            if mask_path.is_file():
-                pairs.append((image_path, mask_path))
+    image_root = root / "images"
+    mask_root = root / "masks"
+    for image_path in sorted(image_root.glob("*.jpg")):
+        mask_path = mask_root / image_path.with_suffix(".webp").name
+        if mask_path.is_file():
+            pairs.append((image_path, mask_path))
     return pairs
 
 

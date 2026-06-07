@@ -120,6 +120,7 @@ name = "court-training"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "jaxtyping" },
     { name = "loguru" },
     { name = "numpy" },
     { name = "pillow" },
@@ -138,6 +139,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "jaxtyping", specifier = ">=0.3.0" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy", specifier = ">=2.2.0" },
     { name = "pillow", specifier = ">=12.0.0" },

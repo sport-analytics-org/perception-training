@@ -48,20 +48,34 @@ def main(
     learning_rate: float = typer.Option(3e-5, help="AdamW learning rate."),
     num_workers: int = typer.Option(2, help="DataLoader workers."),
     seed: int = typer.Option(79, help="Random seed."),
+    image_height: int = typer.Option(360, help="Training image height."),
+    image_width: int = typer.Option(480, help="Training image width."),
     crop_cutout: bool = typer.Option(True, help="Train with random crop and image cutout augmentation."),
 ) -> None:
     set_seed(seed)
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    image_size = (image_height, image_width)
 
     train_data = MaskDataset(
         train_root.expanduser().resolve(),
         load_mask=load_mask,
+        image_size=image_size,
         transform=CourtAugment(BASKETBALL_LEFT_RIGHT_PAIRS, crop_cutout),
     )
-    eval_data = MaskDataset(val_root.expanduser().resolve(), load_mask=load_mask)
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    eval_loader = DataLoader(eval_data, batch_size=1, shuffle=False, num_workers=num_workers)
+    eval_data = MaskDataset(val_root.expanduser().resolve(), load_mask=load_mask, image_size=image_size)
+    train_loader = DataLoader(
+        train_data,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+    )
+    eval_loader = DataLoader(
+        eval_data,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+    )
 
     device = training_device()
     model = DinoSegmenter(
@@ -166,10 +180,8 @@ def batch_to_tensors(
     batch: dict[str, Tensor],
     device: torch.device,
 ) -> tuple[Float[Tensor, "B 3 H W"], Float[Tensor, "B N H W"]]:
-    image_batch = batch["image"].to(device=device, dtype=torch.float32)
-    mask_batch = batch["mask"].to(device=device, dtype=torch.float32)
-    images = image_batch.permute(0, 3, 1, 2) / 255.0
-    masks = mask_batch.permute(0, 3, 1, 2)
+    images = batch["image"].to(device=device, dtype=torch.float32).permute(0, 3, 1, 2) / 255.0
+    masks = batch["mask"].to(device=device, dtype=torch.float32).permute(0, 3, 1, 2)
     images = (images - IMAGE_MEAN.to(device)) / IMAGE_STD.to(device)
     return images, masks
 

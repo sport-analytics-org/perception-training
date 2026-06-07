@@ -1,7 +1,7 @@
 import albumentations as A
 import numpy as np
 
-from court_training.dataset import MaskSample
+from court_training.dataset import Sample
 
 
 class CourtAugment:
@@ -45,7 +45,7 @@ class CourtAugment:
         self.cutout_holes = cutout_holes
         self.cutout_size = cutout_size
 
-    def __call__(self, sample: MaskSample) -> MaskSample:
+    def __call__(self, sample: Sample) -> Sample:
         height, width = sample["image"].shape[:2]
         transformed = self.transform((width, height))(image=sample["image"], mask=sample["mask"])
         return {"image": transformed["image"], "mask": transformed["mask"].astype(np.float32)}

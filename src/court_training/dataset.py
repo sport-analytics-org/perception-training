@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 from court_training.constants import IMAGE_MEAN, IMAGE_STD
 
 
-class MaskSample(TypedDict):
+class Sample(TypedDict):
     image: UInt8[np.ndarray, "H W 3"]
     mask: Float[np.ndarray, "H W N"]
 
@@ -22,9 +22,11 @@ class MaskDataset(Dataset):
         self,
         root: Path,
         load_mask: Callable[[np.ndarray], Float[np.ndarray, "H W N"]],
-        transform: Callable[[MaskSample], MaskSample] | None = None,
+        image_size: tuple[int, int],
+        transform: Callable[[Sample], Sample] | None = None,
     ) -> None:
         self.load_mask = load_mask
+        self.image_size = image_size
         self.transform = transform
         self.items = image_mask_pairs(root)
         if not self.items:
@@ -33,14 +35,22 @@ class MaskDataset(Dataset):
     def __len__(self) -> int:
         return len(self.items)
 
-    def __getitem__(self, index: int) -> MaskSample:
-        image_path, mask_path = self.items[index]
-        image = np.asarray(Image.open(image_path).convert("RGB"), dtype=np.uint8)
-        bitfield = np.asarray(Image.open(mask_path).convert("L"), dtype=np.uint8)
-        sample: MaskSample = {"image": image, "mask": self.load_mask(bitfield)}
+    def __getitem__(self, index: int) -> Sample:
+        sample = self.load(index, self.image_size)
         if self.transform:
             sample = self.transform(sample)
         return sample
+
+    def load(self, index: int, image_size: tuple[int, int]) -> Sample:
+        image_path, mask_path = self.items[index]
+        image = Image.open(image_path).convert("RGB")
+        bitfield = Image.open(mask_path).convert("L")
+        height, width = image_size
+        image = image.resize((width, height), Image.Resampling.BILINEAR)
+        bitfield = bitfield.resize((width, height), Image.Resampling.NEAREST)
+        image_array = np.asarray(image, dtype=np.uint8)
+        bitfield_array = np.asarray(bitfield, dtype=np.uint8)
+        return {"image": image_array, "mask": self.load_mask(bitfield_array)}
 
 
 def image_mask_pairs(root: Path) -> list[tuple[Path, Path]]:

@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 from court_training.constants import IMAGE_MEAN, IMAGE_STD
 
 
-class MaskSample(TypedDict):
+class Sample(TypedDict):
     image: UInt8[np.ndarray, "H W 3"]
     mask: Float[np.ndarray, "H W N"]
 
@@ -23,7 +23,7 @@ class MaskDataset(Dataset):
         root: Path,
         load_mask: Callable[[np.ndarray], Float[np.ndarray, "H W N"]],
         image_size: tuple[int, int],
-        transform: Callable[[MaskSample], MaskSample] | None = None,
+        transform: Callable[[Sample], Sample] | None = None,
     ) -> None:
         self.load_mask = load_mask
         self.image_size = image_size
@@ -35,13 +35,13 @@ class MaskDataset(Dataset):
     def __len__(self) -> int:
         return len(self.items)
 
-    def __getitem__(self, index: int) -> MaskSample:
+    def __getitem__(self, index: int) -> Sample:
         sample = self.load(index, self.image_size)
         if self.transform:
             sample = self.transform(sample)
         return sample
 
-    def load(self, index: int, image_size: tuple[int, int]) -> MaskSample:
+    def load(self, index: int, image_size: tuple[int, int]) -> Sample:
         image_path, mask_path = self.items[index]
         image = Image.open(image_path).convert("RGB")
         bitfield = Image.open(mask_path).convert("L")

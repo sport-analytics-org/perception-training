@@ -12,7 +12,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from court_training.augment import ComposeSampleTransforms, CourtAugment, ResizeSample
+from court_training.augment import CourtAugment
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
 from court_training.dataset import MaskDataset
 from court_training.model import DinoSegmenter, resize_images
@@ -55,14 +55,15 @@ def main(
     set_seed(seed)
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    resize = ResizeSample((image_height, image_width))
+    image_size = (image_height, image_width)
 
     train_data = MaskDataset(
         train_root.expanduser().resolve(),
         load_mask=load_mask,
-        transform=ComposeSampleTransforms((CourtAugment(BASKETBALL_LEFT_RIGHT_PAIRS, crop_cutout), resize)),
+        image_size=image_size,
+        transform=CourtAugment(BASKETBALL_LEFT_RIGHT_PAIRS, crop_cutout),
     )
-    eval_data = MaskDataset(val_root.expanduser().resolve(), load_mask=load_mask, transform=resize)
+    eval_data = MaskDataset(val_root.expanduser().resolve(), load_mask=load_mask, image_size=image_size)
     train_loader = DataLoader(
         train_data,
         batch_size=batch_size,

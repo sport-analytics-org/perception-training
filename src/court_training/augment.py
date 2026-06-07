@@ -1,29 +1,7 @@
-from collections.abc import Callable
-
 import albumentations as A
 import numpy as np
 
 from court_training.dataset import MaskSample
-
-
-class ComposeSampleTransforms:
-    def __init__(self, transforms: tuple[Callable[[MaskSample], MaskSample], ...]) -> None:
-        self.transforms = transforms
-
-    def __call__(self, sample: MaskSample) -> MaskSample:
-        for transform in self.transforms:
-            sample = transform(sample)
-        return sample
-
-
-class ResizeSample:
-    def __init__(self, size: tuple[int, int]) -> None:
-        height, width = size
-        self.transform = A.Resize(height=height, width=width)
-
-    def __call__(self, sample: MaskSample) -> MaskSample:
-        transformed = self.transform(image=sample["image"], mask=sample["mask"])
-        return {"image": transformed["image"], "mask": transformed["mask"].astype(np.float32)}
 
 
 class CourtAugment:

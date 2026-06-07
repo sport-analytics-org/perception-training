@@ -5,8 +5,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
-from court_training.constants import IMAGE_MEAN, IMAGE_STD
-from court_training.masks import MASK_NAMES
+from court_training.constants import IMAGE_MEAN, IMAGE_STD, MASK_NAMES
 
 
 class MaskDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):

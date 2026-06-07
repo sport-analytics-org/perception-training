@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from jaxtyping import Float, UInt8
 from PIL import Image
+from torch import Tensor
 from torch.utils.data import Dataset
 
 from court_training.constants import IMAGE_MEAN, IMAGE_STD
@@ -53,7 +54,7 @@ def image_mask_pairs(root: Path) -> list[tuple[Path, Path]]:
     return pairs
 
 
-def image_to_tensor(image: Image.Image) -> Float[torch.Tensor, "3 H W"]:
+def image_to_tensor(image: Image.Image) -> Float[Tensor, "3 H W"]:
     array = np.asarray(image, dtype=np.float32) / 255.0
     image_tensor = torch.from_numpy(array).permute(2, 0, 1)
     return (image_tensor - IMAGE_MEAN) / IMAGE_STD

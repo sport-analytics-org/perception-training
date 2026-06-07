@@ -7,7 +7,7 @@ import typer
 from jaxtyping import Float, UInt8
 from loguru import logger
 from sportanalytics import NbaCourt
-from torch import nn
+from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -125,7 +125,7 @@ def evaluate(
     loader: DataLoader,
     device: torch.device,
     num_masks: int,
-) -> tuple[float, float, torch.Tensor]:
+) -> tuple[float, float, Tensor]:
     model.eval()
     total_loss = 0.0
     total_images = 0
@@ -148,7 +148,7 @@ def evaluate(
     return total_loss / total_images, miou, class_iou
 
 
-def segmentation_loss(logits: Float[torch.Tensor, "B N H W"], masks: Float[torch.Tensor, "B N H W"]) -> torch.Tensor:
+def segmentation_loss(logits: Float[Tensor, "B N H W"], masks: Float[Tensor, "B N H W"]) -> Tensor:
     bce = F.binary_cross_entropy_with_logits(logits, masks)
     probabilities = logits.sigmoid()
     numerator = 2 * (probabilities * masks).sum(dim=(0, 2, 3))
@@ -163,9 +163,9 @@ def load_mask(bitfield: UInt8[np.ndarray, "H W"]) -> Float[np.ndarray, "H W N"]:
 
 
 def batch_to_tensors(
-    batch: dict[str, torch.Tensor],
+    batch: dict[str, Tensor],
     device: torch.device,
-) -> tuple[Float[torch.Tensor, "B 3 H W"], Float[torch.Tensor, "B N H W"]]:
+) -> tuple[Float[Tensor, "B 3 H W"], Float[Tensor, "B N H W"]]:
     image_batch = batch["image"].to(device=device, dtype=torch.float32)
     mask_batch = batch["mask"].to(device=device, dtype=torch.float32)
     images = image_batch.permute(0, 3, 1, 2) / 255.0
@@ -176,9 +176,9 @@ def batch_to_tensors(
 
 def predict_multiscale(
     model: nn.Module,
-    images: Float[torch.Tensor, "B 3 H W"],
+    images: Float[Tensor, "B 3 H W"],
     scales: tuple[float, ...],
-) -> Float[torch.Tensor, "B N H W"]:
+) -> Float[Tensor, "B N H W"]:
     output_size = images.shape[-2:]
     logits_by_scale = []
     for scale in scales:
@@ -203,7 +203,7 @@ def training_device() -> torch.device:
     return torch.device("cpu")
 
 
-def format_scores(scores: torch.Tensor) -> str:
+def format_scores(scores: Tensor) -> str:
     return "[" + ", ".join(f"{score:.3f}" for score in scores.tolist()) + "]"
 
 

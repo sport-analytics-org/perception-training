@@ -25,8 +25,8 @@ class DinoSegmenter(nn.Module):
 
     def forward(
         self,
-        images: Float[torch.Tensor, "batch 3 height width"],
-    ) -> Float[torch.Tensor, "batch n_masks height width"]:
+        images: Float[torch.Tensor, "B 3 H W"],
+    ) -> Float[torch.Tensor, "B N H W"]:
         height, width = images.shape[-2:]
         patch_height, patch_width = self.backbone.patch_embed.patch_size
         pad_height = (-height) % patch_height
@@ -50,7 +50,7 @@ class DinoSegmenter(nn.Module):
         self,
         image: Image.Image,
         scales: tuple[float, ...],
-    ) -> Float[torch.Tensor, "n_masks height width"]:
+    ) -> Float[torch.Tensor, "N H W"]:
         was_training = self.training
         self.eval()
         try:
@@ -68,8 +68,8 @@ class DinoSegmenter(nn.Module):
 
     def predict_flipped(
         self,
-        images: Float[torch.Tensor, "batch 3 height width"],
-    ) -> Float[torch.Tensor, "batch n_masks height width"]:
+        images: Float[torch.Tensor, "B 3 H W"],
+    ) -> Float[torch.Tensor, "B N H W"]:
         logits = self(torch.flip(images, dims=(-1,)))
         logits = torch.flip(logits, dims=(-1,))
         return swap_left_right_channels(logits)

@@ -2,7 +2,7 @@ import timm
 import torch
 from jaxtyping import Float
 from PIL import Image
-from torch import nn
+from torch import Tensor, nn
 from torch.nn import functional as F
 
 from court_training.dataset import image_to_tensor
@@ -29,10 +29,7 @@ class DinoSegmenter(nn.Module):
             nn.Conv2d(256, num_masks, kernel_size=1),
         )
 
-    def forward(
-        self,
-        images: Float[torch.Tensor, "B 3 H W"],
-    ) -> Float[torch.Tensor, "B N H W"]:
+    def forward(self, images: Float[Tensor, "B 3 H W"]) -> Float[Tensor, "B N H W"]:
         height, width = images.shape[-2:]
         patch_height, patch_width = self.backbone.patch_embed.patch_size
         pad_height = (-height) % patch_height
@@ -52,11 +49,7 @@ class DinoSegmenter(nn.Module):
         return F.interpolate(logits, size=(height, width), mode="bilinear", align_corners=False)
 
     @torch.no_grad()
-    def predict(
-        self,
-        image: Image.Image,
-        scales: tuple[float, ...],
-    ) -> Float[torch.Tensor, "N H W"]:
+    def predict(self, image: Image.Image, scales: tuple[float, ...]) -> Float[Tensor, "N H W"]:
         images = image_to_tensor(image.convert("RGB")).unsqueeze(0).to(self.device)
         output_size = images.shape[-2:]
         logits_by_scale = []
@@ -67,10 +60,7 @@ class DinoSegmenter(nn.Module):
             logits_by_scale.append(F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False))
         return torch.stack(logits_by_scale).mean(dim=0).squeeze(0)
 
-    def predict_flipped(
-        self,
-        images: Float[torch.Tensor, "B 3 H W"],
-    ) -> Float[torch.Tensor, "B N H W"]:
+    def predict_flipped(self, images: Float[Tensor, "B 3 H W"]) -> Float[Tensor, "B N H W"]:
         logits = self(torch.flip(images, dims=(-1,)))
         logits = torch.flip(logits, dims=(-1,))
         return swap_left_right_channels(logits, self.left_right_pairs)
@@ -80,13 +70,13 @@ class DinoSegmenter(nn.Module):
         return next(self.parameters()).device
 
 
-def resize_images(images: torch.Tensor, scale: float) -> torch.Tensor:
+def resize_images(images: Tensor, scale: float) -> Tensor:
     if scale == 1.0:
         return images
     return F.interpolate(images, scale_factor=scale, mode="bilinear", align_corners=False)
 
 
-def swap_left_right_channels(tensor: torch.Tensor, left_right_pairs: tuple[tuple[int, int], ...]) -> torch.Tensor:
+def swap_left_right_channels(tensor: Tensor, left_right_pairs: tuple[tuple[int, int], ...]) -> Tensor:
     swapped = tensor.clone()
     for left, right in left_right_pairs:
         swapped[:, left] = tensor[:, right]

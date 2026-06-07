@@ -3,13 +3,14 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from court_training.constants import BACKBONE, LEFT_RIGHT_PAIRS, MASK_NAMES
+from court_training.constants import BACKBONE
+from court_training.masks import LEFT_RIGHT_PAIRS, MASK_NAMES
 
 
 class DinoSegmenter(nn.Module):
-    def __init__(self, pretrained: bool = True) -> None:
+    def __init__(self, backbone: str = BACKBONE, pretrained: bool = True) -> None:
         super().__init__()
-        self.backbone = timm.create_model(BACKBONE, pretrained=pretrained, num_classes=0, dynamic_img_size=True)
+        self.backbone = timm.create_model(backbone, pretrained=pretrained, num_classes=0, dynamic_img_size=True)
         self.decoder = nn.Sequential(
             nn.Conv2d(self.backbone.embed_dim, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),

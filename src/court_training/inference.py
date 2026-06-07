@@ -3,8 +3,9 @@ from pathlib import Path
 import numpy as np
 import torch
 from PIL import Image
+from torch.nn import functional as F
 
-from court_training.constants import TTA_SCALES
+from court_training.constants import IMAGE_SIZE, TTA_SCALES
 from court_training.data import image_to_tensor
 from court_training.model import DinoSegmenter, predict_multiscale
 
@@ -14,9 +15,11 @@ class CourtSegmenter:
         self,
         model: DinoSegmenter,
         device: str | torch.device | None = None,
+        image_size: tuple[int, int] = IMAGE_SIZE,
         tta_scales: tuple[float, ...] = TTA_SCALES,
     ) -> None:
         self.device = torch.device(device) if device is not None else default_device()
+        self.image_size = image_size
         self.model = model.to(self.device).eval()
         self.tta_scales = tta_scales
 
@@ -29,8 +32,11 @@ class CourtSegmenter:
 
     @torch.inference_mode()
     def predict_proba(self, image: str | Path | Image.Image | np.ndarray) -> np.ndarray:
-        image_tensor = image_to_tensor(load_image(image)).unsqueeze(0).to(self.device)
+        loaded_image = load_image(image)
+        image_tensor = image_to_tensor(loaded_image.resize(self.image_size)).unsqueeze(0).to(self.device)
         logits = predict_multiscale(self.model, image_tensor, self.tta_scales)
+        output_size = (loaded_image.height, loaded_image.width)
+        logits = F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False)
         probabilities = logits.sigmoid().squeeze(0).permute(1, 2, 0)
         return probabilities.cpu().numpy()
 

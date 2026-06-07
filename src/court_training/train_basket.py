@@ -11,14 +11,29 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from court_training.augment import BasketballAugment
-from court_training.constants import BACKBONE, MASK_NAMES, TTA_SCALES
+from court_training.constants import BACKBONE, IMAGE_SIZE, TTA_SCALES
 from court_training.data import MaskDataset
+from court_training.masks import MASK_NAMES
 from court_training.model import DinoSegmenter, predict_multiscale
 
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
 
 TRAIN_DATASETS = ("basketball_51", "borgo")
 EVAL_DATASET = "e_bard_detection"
+EVAL_IMAGES = {
+    Path("000/all_00000001.jpg"),
+    Path("001/all_00001067.jpg"),
+    Path("001/all_00001105.jpg"),
+    Path("001/all_00001190.jpg"),
+    Path("001/all_00001266.jpg"),
+    Path("001/all_00001289.jpg"),
+    Path("001/all_00001331.jpg"),
+    Path("001/all_00001726.jpg"),
+    Path("002/all_00002178.jpg"),
+    Path("002/all_00002544.jpg"),
+    Path("003/all_00003983.jpg"),
+    Path("004/all_00004638.jpg"),
+}
 DATA_ROOT_ARGUMENT = typer.Argument(help="Exported dataset root containing basket/.")
 OUTPUT_DIR_ARGUMENT = typer.Argument(help="Directory where checkpoints are written.")
 
@@ -27,30 +42,67 @@ OUTPUT_DIR_ARGUMENT = typer.Argument(help="Directory where checkpoints are writt
 def main(
     data_root: Path = DATA_ROOT_ARGUMENT,
     output_dir: Path = OUTPUT_DIR_ARGUMENT,
-    epochs: int = typer.Option(140, help="Training epochs."),
+    epochs: int = typer.Option(90, help="Training epochs."),
     batch_size: int = typer.Option(2, help="Training batch size."),
     learning_rate: float = typer.Option(3e-5, help="AdamW learning rate."),
+    weight_decay: float = typer.Option(1e-4, help="AdamW weight decay."),
     num_workers: int = typer.Option(2, help="DataLoader workers."),
     seed: int = typer.Option(79, help="Random seed."),
-    crop_cutout: bool = typer.Option(True, help="Train with random crop and image cutout augmentation."),
+    backbone: str = typer.Option(BACKBONE, help="timm backbone name."),
+    image_width: int = typer.Option(IMAGE_SIZE[0], help="Training image width."),
+    image_height: int = typer.Option(IMAGE_SIZE[1], help="Training image height."),
+    eval_interval: int = typer.Option(1, help="Evaluate every N epochs, always including the final epoch."),
 ) -> None:
     set_seed(seed)
     basket_root = data_root.expanduser().resolve() / "basket"
+    image_size = (image_width, image_height)
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    train_data = MaskDataset(basket_root, TRAIN_DATASETS, transform=BasketballAugment(crop_cutout))
-    eval_data = MaskDataset(basket_root, (EVAL_DATASET,))
+    train_items, eval_items = split_items(basket_root)
+    train_data = MaskDataset(train_items, image_size, transform=BasketballAugment())
+    eval_data = MaskDataset(eval_items, image_size)
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     eval_loader = DataLoader(eval_data, batch_size=1, shuffle=False, num_workers=num_workers)
 
     device = training_device()
-    model = DinoSegmenter().to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+    model = DinoSegmenter(backbone).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    logger.info("Training {} on {}", BACKBONE, device)
-    logger.info("Train images: {} | Eval images: {} | crop_cutout={}", len(train_data), len(eval_data), crop_cutout)
-    train(model, optimizer, train_loader, eval_loader, device, output_dir, epochs)
+    logger.info("Training {} on {}", backbone, device)
+    logger.info(
+        "Train images: {} | Eval images: {} | size={} | augmentation=appearance | lr={} | weight_decay={}",
+        len(train_data),
+        len(eval_data),
+        image_size,
+        learning_rate,
+        weight_decay,
+    )
+    train(
+        model,
+        optimizer,
+        train_loader,
+        eval_loader,
+        device,
+        output_dir,
+        epochs,
+        eval_interval,
+    )
+
+
+def split_items(basket_root: Path) -> tuple[list[tuple[Path, Path]], list[tuple[Path, Path]]]:
+    train_items = []
+    for dataset_name in TRAIN_DATASETS:
+        train_items.extend(MaskDataset.items_for(basket_root, dataset_name))
+
+    eval_items = []
+    for image_path, mask_path in MaskDataset.items_for(basket_root, EVAL_DATASET):
+        image_name = image_path.relative_to(basket_root / EVAL_DATASET / "images")
+        if image_name in EVAL_IMAGES:
+            eval_items.append((image_path, mask_path))
+        else:
+            train_items.append((image_path, mask_path))
+    return train_items, eval_items
 
 
 def train(
@@ -61,16 +113,22 @@ def train(
     device: torch.device,
     output_dir: Path,
     epochs: int,
+    eval_interval: int,
 ) -> None:
     best_miou = 0.0
     for epoch in range(1, epochs + 1):
         train_loss = train_epoch(model, train_loader, optimizer, device)
+        if epoch % eval_interval != 0 and epoch != epochs:
+            logger.info("Epoch {}/{} train_loss={:.4f} lr={:.2e}", epoch, epochs, train_loss, current_lr(optimizer))
+            continue
+
         eval_loss, miou, class_iou = evaluate(model, eval_loader, device)
         logger.info(
-            "Epoch {}/{} train_loss={:.4f} eval_loss={:.4f} eval_mIoU={:.4f} class_iou={}",
+            "Epoch {}/{} train_loss={:.4f} lr={:.2e} eval_loss={:.4f} eval_mIoU={:.4f} class_iou={}",
             epoch,
             epochs,
             train_loss,
+            current_lr(optimizer),
             eval_loss,
             miou,
             format_scores(class_iou),
@@ -134,6 +192,10 @@ def segmentation_loss(logits: torch.Tensor, masks: torch.Tensor) -> torch.Tensor
     denominator = probabilities.sum(dim=(0, 2, 3)) + masks.sum(dim=(0, 2, 3))
     dice = 1 - ((numerator + 1) / (denominator + 1)).mean()
     return bce + dice
+
+
+def current_lr(optimizer: torch.optim.Optimizer) -> float:
+    return optimizer.param_groups[0]["lr"]
 
 
 def set_seed(seed: int) -> None:

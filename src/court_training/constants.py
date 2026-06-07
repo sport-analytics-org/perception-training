@@ -1,7 +1,6 @@
 from sportanalytics import BasketCourt, NbaCourt
 from torch import tensor
 
-BACKBONE = "vit_small_plus_patch16_dinov3"
 BASKETBALL_AREA_ORDER = ("court", "3pt_area", "painted_area")
 
 

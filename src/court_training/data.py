@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import TypedDict
 
 import numpy as np
 import torch
@@ -6,6 +7,11 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, MASK_NAMES
+
+
+class MaskSample(TypedDict):
+    image: torch.Tensor
+    mask: torch.Tensor
 
 
 class MaskDataset(Dataset):
@@ -17,11 +23,11 @@ class MaskDataset(Dataset):
     def __len__(self) -> int:
         return len(self.items)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index: int) -> MaskSample:
         image_path, mask_path = self.items[index]
         image = Image.open(image_path).convert("RGB")
         bitfield = np.asarray(Image.open(mask_path).convert("L"), dtype=np.uint8)
-        return image_to_tensor(image), bitfield_to_masks(bitfield)
+        return {"image": image_to_tensor(image), "mask": bitfield_to_masks(bitfield)}
 
 
 def image_mask_pairs(root: Path, dataset_names: tuple[str, ...]) -> list[tuple[Path, Path]]:

@@ -11,8 +11,8 @@ from court_training.constants import IMAGE_MEAN, IMAGE_STD, MASK_NAMES
 
 
 class MaskSample(TypedDict):
-    image: Float[torch.Tensor, "channel height width"]  # noqa: F722
-    mask: Float[torch.Tensor, "mask height width"]  # noqa: F722
+    image: Float[torch.Tensor, "3 height width"]  # noqa: F722
+    mask: Float[torch.Tensor, "n_masks height width"]  # noqa: F722
 
 
 class MaskDataset(Dataset):
@@ -43,12 +43,12 @@ def image_mask_pairs(root: Path, dataset_names: tuple[str, ...]) -> list[tuple[P
     return pairs
 
 
-def image_to_tensor(image: Image.Image) -> Float[torch.Tensor, "channel height width"]:  # noqa: F722
+def image_to_tensor(image: Image.Image) -> Float[torch.Tensor, "3 height width"]:  # noqa: F722
     array = np.asarray(image, dtype=np.float32) / 255.0
     image_tensor = torch.from_numpy(array).permute(2, 0, 1)
     return (image_tensor - IMAGE_MEAN) / IMAGE_STD
 
 
-def bitfield_to_masks(bitfield: np.ndarray) -> Float[torch.Tensor, "mask height width"]:  # noqa: F722
+def bitfield_to_masks(bitfield: np.ndarray) -> Float[torch.Tensor, "n_masks height width"]:  # noqa: F722
     masks = [(bitfield & (1 << bit)) > 0 for bit in range(len(MASK_NAMES))]
     return torch.from_numpy(np.stack(masks).astype(np.float32))

@@ -8,6 +8,7 @@ dependencies = [
     "loguru>=0.7.3",
     "numpy>=2.2.0",
     "pillow>=12.0.0",
+    "sport-analytics",
     "timm>=1.0.27",
     "torch>=2.4",
     "torchvision>=0.19",
@@ -29,3 +30,6 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.uv.sources]
+sport-analytics = { git = "ssh://git@github.com/sport-analytics-org/sport-analytics.git" }

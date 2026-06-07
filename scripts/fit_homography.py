@@ -42,12 +42,16 @@ def main(
     targets = load_targets(mask_path, court_template)
     initial = centered_homography()
     homography = fit_homography(targets, court_template)
+    initial_metrics = iou_metrics(targets, initial, court_template)
+    final_metrics = iou_metrics(targets, homography, court_template)
     result = {
         "mask": str(mask_path),
         "court": court,
         "labels": sorted(targets),
-        "initial_iou": mean_iou(targets, initial, court_template),
-        "final_iou": mean_iou(targets, homography, court_template),
+        "initial_iou": initial_metrics["macro_iou"],
+        "initial_area_weighted_iou": initial_metrics["area_weighted_iou"],
+        "final_iou": final_metrics["macro_iou"],
+        "final_area_weighted_iou": final_metrics["area_weighted_iou"],
         "homography": homography.tolist(),
     }
     print(json.dumps(result, indent=2))
@@ -74,10 +78,7 @@ def fit_homography(
     labels = [label for label in court_template.areas() if label in targets]
     source_masks = template_masks(court_template, labels, size, device)
     target_masks = torch.stack([resize_mask(targets[label], size, device) for label in labels])
-    source_masks = torch.cat([source_masks, source_masks.amax(dim=0, keepdim=True)])
-    target_masks = torch.cat([target_masks, target_masks.amax(dim=0, keepdim=True)])
-    weights = torch.ones(source_masks.shape[0], device=device)
-    weights /= weights.sum()
+    weights = mask_weights(labels, target_masks)
 
     initial_tensor = torch.tensor(centered_homography(), dtype=torch.float32)
     params = torch.tensor([1, 0, 0, 0, 1, 0, 0, 0], dtype=torch.float32, requires_grad=True)
@@ -89,14 +90,22 @@ def fit_homography(
         output_shape = (target_masks.shape[-2], target_masks.shape[-1])
         predicted = warp(source_masks, homography, output_shape)
         loss = dice_loss(predicted, target_masks, weights)
-        if "left_court" in labels and "right_court" in labels:
-            loss = loss + horizon_loss(homography)
         loss.backward()
         return loss
 
     optimizer.step(closure)
     homography = compose_homography(initial_tensor, params.detach()).numpy()
     return homography / homography[2, 2]
+
+
+def mask_weights(labels: list[str], target_masks: Float[Tensor, "masks H W"]) -> Float[Tensor, "*masks"]:
+    areas = target_masks.sum(dim=(1, 2)).sqrt()
+    multipliers = torch.tensor(
+        [1.5 if "3pt_area" in label or "painted_area" in label else 1.0 for label in labels],
+        device=target_masks.device,
+    )
+    weights = areas * multipliers
+    return weights / weights.sum()
 
 
 def template_masks(
@@ -157,20 +166,11 @@ def compose_homography(initial: Float[Tensor, "3 3"], params: Float[Tensor, "8"]
     return homography / homography[2, 2]
 
 
-def horizon_loss(homography: Float[Tensor, "3 3"]) -> Float[Tensor, ""]:
-    points = torch.tensor(
-        [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1], [0.5, 0, 1], [0.5, 1, 1]],
-        dtype=homography.dtype,
-        device=homography.device,
-    )
-    return torch.relu(0.05 - points @ homography[2]).pow(2).mean() * 10
-
-
-def mean_iou(
+def iou_metrics(
     targets: dict[str, Bool[np.ndarray, "H W"]],
     homography: Float[np.ndarray, "3 3"],
     court_template: BasketCourt,
-) -> float:
+) -> dict[str, float]:
     size = 768
     device = torch.device("cpu")
     labels = [label for label in court_template.areas() if label in targets]
@@ -179,12 +179,18 @@ def mean_iou(
     output_shape = (target_masks.shape[-2], target_masks.shape[-1])
     predictions = warp(source_masks, torch.tensor(homography, dtype=torch.float32), output_shape)
     scores = []
+    areas = []
     for prediction_tensor, target_tensor in zip(predictions, target_masks, strict=True):
         target = target_tensor.numpy() > 0.5
         prediction = prediction_tensor.numpy() > 0.5
         union = np.logical_or(target, prediction).sum()
         scores.append(float(np.logical_and(target, prediction).sum() / union) if union else 1.0)
-    return float(np.mean(scores))
+        areas.append(float(target.sum()))
+    weights = np.array(areas) / np.sum(areas)
+    return {
+        "macro_iou": float(np.mean(scores)),
+        "area_weighted_iou": float(np.dot(scores, weights)),
+    }
 
 
 if __name__ == "__main__":

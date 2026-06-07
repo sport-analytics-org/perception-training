@@ -36,18 +36,21 @@ class MaskDataset(Dataset):
         return len(self.items)
 
     def __getitem__(self, index: int) -> MaskSample:
+        sample = self.load(index, self.image_size)
+        if self.transform:
+            sample = self.transform(sample)
+        return sample
+
+    def load(self, index: int, image_size: tuple[int, int]) -> MaskSample:
         image_path, mask_path = self.items[index]
         image = Image.open(image_path).convert("RGB")
         bitfield = Image.open(mask_path).convert("L")
-        height, width = self.image_size
+        height, width = image_size
         image = image.resize((width, height), Image.Resampling.BILINEAR)
         bitfield = bitfield.resize((width, height), Image.Resampling.NEAREST)
         image_array = np.asarray(image, dtype=np.uint8)
         bitfield_array = np.asarray(bitfield, dtype=np.uint8)
-        sample: MaskSample = {"image": image_array, "mask": self.load_mask(bitfield_array)}
-        if self.transform:
-            sample = self.transform(sample)
-        return sample
+        return {"image": image_array, "mask": self.load_mask(bitfield_array)}
 
 
 def image_mask_pairs(root: Path) -> list[tuple[Path, Path]]:

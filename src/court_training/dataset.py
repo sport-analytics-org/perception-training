@@ -11,8 +11,8 @@ from court_training.constants import IMAGE_MEAN, IMAGE_STD, MASK_NAMES
 
 
 class MaskSample(TypedDict):
-    image: Float[torch.Tensor, "3 H W"]
-    mask: Float[torch.Tensor, "N H W"]
+    image: UInt8[np.ndarray, "H W 3"]
+    mask: Float[np.ndarray, "H W N"]
 
 
 class MaskDataset(Dataset):
@@ -26,9 +26,9 @@ class MaskDataset(Dataset):
 
     def __getitem__(self, index: int) -> MaskSample:
         image_path, mask_path = self.items[index]
-        image = Image.open(image_path).convert("RGB")
+        image = np.asarray(Image.open(image_path).convert("RGB"), dtype=np.uint8)
         bitfield = np.asarray(Image.open(mask_path).convert("L"), dtype=np.uint8)
-        return {"image": image_to_tensor(image), "mask": bitfield_to_masks(bitfield)}
+        return {"image": image, "mask": bitfield_to_masks(bitfield)}
 
 
 def image_mask_pairs(root: Path) -> list[tuple[Path, Path]]:
@@ -48,6 +48,6 @@ def image_to_tensor(image: Image.Image) -> Float[torch.Tensor, "3 H W"]:
     return (image_tensor - IMAGE_MEAN) / IMAGE_STD
 
 
-def bitfield_to_masks(bitfield: UInt8[np.ndarray, "H W"]) -> Float[torch.Tensor, "N H W"]:
+def bitfield_to_masks(bitfield: UInt8[np.ndarray, "H W"]) -> Float[np.ndarray, "H W N"]:
     masks = [(bitfield & (1 << bit)) > 0 for bit in range(len(MASK_NAMES))]
-    return torch.from_numpy(np.stack(masks).astype(np.float32))
+    return np.stack(masks, axis=-1).astype(np.float32)

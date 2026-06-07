@@ -3,6 +3,8 @@ from jaxtyping import Float
 from torch import Tensor
 from torch.nn import functional as F
 
+MIN_DENOMINATOR = 1e-6
+
 
 def warp(
     image: Float[Tensor, "C H W"],
@@ -15,12 +17,16 @@ def warp(
     # Inverse warp: for each output pixel, find where to sample in the source image.
     inverse = torch.linalg.inv(homography)
     source = grid.reshape(-1, 3) @ inverse.T
-    denominator = source[:, 2:].clamp_min(1e-6)
+    denominator = source[:, 2:]
+    denominator_sign = torch.where(denominator < 0, -1.0, 1.0)
+    safe_denominator = denominator_sign * MIN_DENOMINATOR
+    denominator = torch.where(denominator.abs() < MIN_DENOMINATOR, safe_denominator, denominator)
     source = source[:, :2] / denominator
 
     # grid_sample expects coordinates in [-1, 1] and one grid per input batch item.
     output_height, output_width = output_shape
     sample_grid = source.reshape(1, output_height, output_width, 2) * 2 - 1
+    sample_grid = sample_grid.clamp(-2, 2)
     sample_grid = sample_grid.expand(image.shape[0], -1, -1, -1)
     return F.grid_sample(image[:, None], sample_grid, mode="bilinear", padding_mode="zeros", align_corners=True)[:, 0]
 

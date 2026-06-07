@@ -1,10 +1,12 @@
 import timm
 import torch
 from jaxtyping import Float
+from PIL import Image
 from torch import nn
 from torch.nn import functional as F
 
 from court_training.constants import LEFT_RIGHT_PAIRS, MASK_NAMES
+from court_training.dataset import image_to_tensor
 
 
 class DinoSegmenter(nn.Module):
@@ -43,28 +45,44 @@ class DinoSegmenter(nn.Module):
         logits = self.decoder(features)
         return F.interpolate(logits, size=(height, width), mode="bilinear", align_corners=False)
 
+    @torch.no_grad()
+    def predict(
+        self,
+        image: Image.Image,
+        scales: tuple[float, ...],
+    ) -> Float[torch.Tensor, "n_masks height width"]:
+        was_training = self.training
+        self.eval()
+        try:
+            images = image_to_tensor(image.convert("RGB")).unsqueeze(0).to(self.device)
+            output_size = images.shape[-2:]
+            logits_by_scale = []
+            for scale in scales:
+                scaled_images = resize_images(images, scale)
+                logits = self(scaled_images)
+                logits = (logits + self.predict_flipped(scaled_images)) / 2
+                logits_by_scale.append(F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False))
+            return torch.stack(logits_by_scale).mean(dim=0).squeeze(0)
+        finally:
+            self.train(was_training)
 
-def predict_multiscale(model: nn.Module, images: torch.Tensor, scales: tuple[float, ...]) -> torch.Tensor:
-    output_size = images.shape[-2:]
-    logits_by_scale = []
-    for scale in scales:
-        scaled_images = resize_images(images, scale)
-        logits = model(scaled_images)
-        logits = (logits + predict_flipped(model, scaled_images)) / 2
-        logits_by_scale.append(F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False))
-    return torch.stack(logits_by_scale).mean(dim=0)
+    def predict_flipped(
+        self,
+        images: Float[torch.Tensor, "batch 3 height width"],
+    ) -> Float[torch.Tensor, "batch n_masks height width"]:
+        logits = self(torch.flip(images, dims=(-1,)))
+        logits = torch.flip(logits, dims=(-1,))
+        return swap_left_right_channels(logits)
+
+    @property
+    def device(self) -> torch.device:
+        return next(self.parameters()).device
 
 
 def resize_images(images: torch.Tensor, scale: float) -> torch.Tensor:
     if scale == 1.0:
         return images
     return F.interpolate(images, scale_factor=scale, mode="bilinear", align_corners=False)
-
-
-def predict_flipped(model: nn.Module, images: torch.Tensor) -> torch.Tensor:
-    logits = model(torch.flip(images, dims=(-1,)))
-    logits = torch.flip(logits, dims=(-1,))
-    return swap_left_right_channels(logits)
 
 
 def swap_left_right_channels(tensor: torch.Tensor) -> torch.Tensor:

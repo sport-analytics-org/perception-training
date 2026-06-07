@@ -3,11 +3,13 @@ from typing import TypedDict
 
 import numpy as np
 import torch
-from jaxtyping import Float
+from jaxtyping import Float, UInt8
 from PIL import Image
 from torch.utils.data import Dataset
 
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, MASK_NAMES
+
+Bitfield = UInt8[np.ndarray, "height width"]
 
 
 class MaskSample(TypedDict):
@@ -49,6 +51,6 @@ def image_to_tensor(image: Image.Image) -> Float[torch.Tensor, "3 height width"]
     return (image_tensor - IMAGE_MEAN) / IMAGE_STD
 
 
-def bitfield_to_masks(bitfield: np.ndarray) -> Float[torch.Tensor, "n_masks height width"]:
+def bitfield_to_masks(bitfield: Bitfield) -> Float[torch.Tensor, "n_masks height width"]:
     masks = [(bitfield & (1 << bit)) > 0 for bit in range(len(MASK_NAMES))]
     return torch.from_numpy(np.stack(masks).astype(np.float32))

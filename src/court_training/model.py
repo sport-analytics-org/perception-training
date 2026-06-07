@@ -1,5 +1,6 @@
 import timm
 import torch
+from jaxtyping import Float
 from torch import nn
 from torch.nn import functional as F
 
@@ -20,7 +21,10 @@ class DinoSegmenter(nn.Module):
             nn.Conv2d(256, len(MASK_NAMES), kernel_size=1),
         )
 
-    def forward(self, images: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        images: Float[torch.Tensor, "batch 3 height width"],
+    ) -> Float[torch.Tensor, "batch n_masks height width"]:
         height, width = images.shape[-2:]
         patch_height, patch_width = self.backbone.patch_embed.patch_size
         pad_height = (-height) % patch_height

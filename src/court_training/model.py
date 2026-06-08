@@ -1,4 +1,3 @@
-import numpy as np
 import timm
 import torch
 from jaxtyping import Float
@@ -6,8 +5,8 @@ from PIL import Image
 from torch import Tensor, nn
 from torch.nn import functional as F
 
+from court_training import inference
 from court_training.dataset import image_to_tensor
-from court_training.flip import flip
 
 
 class CourtSegmenter(nn.Module):
@@ -114,41 +113,11 @@ class CourtSegmenter(nn.Module):
         images: Float[Tensor, "B 3 H W"],
         scales: tuple[float, ...],
     ) -> Float[Tensor, "B N H W"]:
-        output_size = images.shape[-2:]
-        logits_by_scale = []
-        for scale in scales:
-            scaled_images = resize_images(images, scale)
-            logits = self(scaled_images)
-            logits = (logits + self.predict_flipped(scaled_images)) / 2
-            logits_by_scale.append(F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False))
-        return torch.stack(logits_by_scale).mean(dim=0)
-
-    def predict_flipped(self, images: Float[Tensor, "B 3 H W"]) -> Float[Tensor, "B N H W"]:
-        images_numpy = images.detach().cpu().permute(0, 2, 3, 1).numpy()
-        flipped_images = flip(image=images_numpy)["image"]
-        flipped_images = numpy_images_to_tensor(flipped_images, images)
-        flipped_logits = self(flipped_images)
-        logits_numpy = flipped_logits.detach().cpu().permute(0, 2, 3, 1).numpy()
-        logits_numpy = flip(masks=logits_numpy, mask_names=self.mask_names)["masks"]
-        return numpy_masks_to_tensor(logits_numpy, flipped_logits)
+        return inference.predict_masks(self, images, scales, self.mask_names)
 
     @property
     def device(self) -> torch.device:
         return next(self.parameters()).device
-
-
-def resize_images(images: Tensor, scale: float) -> Tensor:
-    return F.interpolate(images, scale_factor=scale, mode="bilinear", align_corners=False)
-
-
-def numpy_images_to_tensor(images: np.ndarray, like: Tensor) -> Tensor:
-    tensor = torch.from_numpy(images.copy()).permute(0, 3, 1, 2)
-    return tensor.to(device=like.device, dtype=like.dtype)
-
-
-def numpy_masks_to_tensor(masks: np.ndarray, like: Tensor) -> Tensor:
-    tensor = torch.from_numpy(masks.copy()).permute(0, 3, 1, 2)
-    return tensor.to(device=like.device, dtype=like.dtype)
 
 
 def softargmax_2d(heatmaps: Float[Tensor, "B K H W"], temperature: float = 4.0) -> Float[Tensor, "B K 2"]:

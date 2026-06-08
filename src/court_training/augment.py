@@ -1,5 +1,6 @@
 import albumentations as A
 import numpy as np
+from jaxtyping import Bool, Float
 
 from court_training.dataset import Sample
 
@@ -8,6 +9,7 @@ class CourtAugment:
     def __init__(
         self,
         left_right_pairs: tuple[tuple[int, int], ...],
+        keypoint_pairs: tuple[tuple[int, int], ...] = (),
         crop_cutout: bool = True,
         crop_p: float = 0.7,
         cutout_p: float = 0.5,
@@ -27,6 +29,7 @@ class CourtAugment:
         cutout_size: tuple[float, float] = (0.04, 0.18),
     ) -> None:
         self.left_right_pairs = left_right_pairs
+        self.keypoint_pairs = keypoint_pairs
         self.crop_cutout = crop_cutout
         self.crop_p = crop_p
         self.cutout_p = cutout_p
@@ -47,8 +50,23 @@ class CourtAugment:
 
     def __call__(self, sample: Sample) -> Sample:
         height, width = sample["image"].shape[:2]
-        transformed = self.transform((width, height))(image=sample["image"], mask=sample["mask"])
-        return {"image": transformed["image"], "mask": transformed["mask"].astype(np.float32)}
+        keypoints = normalized_to_pixels(sample["keypoints"], width, height)
+        transformed = self.transform((width, height))(
+            image=sample["image"],
+            mask=sample["mask"],
+            keypoints=keypoints,
+        )
+        keypoints = pixels_to_normalized(np.asarray(transformed["keypoints"], dtype=np.float32), width, height)
+        visibility = sample["keypoint_visibility"] * points_inside_image(keypoints)
+        sample = {
+            "image": transformed["image"],
+            "mask": transformed["mask"].astype(np.float32),
+            "keypoints": keypoints,
+            "keypoint_visibility": visibility.astype(np.float32),
+        }
+        if np.random.random() < self.flip_p:
+            sample = horizontal_flip_sample(sample, self.left_right_pairs, self.keypoint_pairs)
+        return sample
 
     def transform(self, image_size: tuple[int, int]) -> A.Compose:
         width, height = image_size
@@ -60,7 +78,6 @@ class CourtAugment:
                 shear=self.affine_shear,
                 p=self.affine_p,
             ),
-            SideAwareHorizontalFlip(self.left_right_pairs, p=self.flip_p),
             A.ColorJitter(
                 brightness=self.color_strength,
                 contrast=self.color_strength * 1.4,
@@ -86,22 +103,73 @@ class CourtAugment:
             )
             transforms.insert(0, crop)
             transforms.append(cutout)
-        return A.Compose(transforms)
+        keypoint_params = A.KeypointParams(format="xy", remove_invisible=False)
+        return A.Compose(transforms, keypoint_params=keypoint_params)
 
 
-class SideAwareHorizontalFlip(A.HorizontalFlip):
-    def __init__(self, left_right_pairs: tuple[tuple[int, int], ...], p: float) -> None:
-        super().__init__(p=p)
-        self.left_right_pairs = left_right_pairs
-
-    def apply_to_mask(self, mask: np.ndarray, *args: object, **params: object) -> np.ndarray:
-        flipped = np.fliplr(mask).copy()
-        return swap_left_right_channels(flipped, self.left_right_pairs)
-
-
-def swap_left_right_channels(mask: np.ndarray, left_right_pairs: tuple[tuple[int, int], ...]) -> np.ndarray:
+def swap_left_right_channels(
+    mask: Float[np.ndarray, "H W N"],
+    left_right_pairs: tuple[tuple[int, int], ...],
+) -> Float[np.ndarray, "H W N"]:
     swapped = mask.copy()
     for left, right in left_right_pairs:
         swapped[:, :, left] = mask[:, :, right]
         swapped[:, :, right] = mask[:, :, left]
     return swapped
+
+
+def horizontal_flip_sample(
+    sample: Sample,
+    left_right_pairs: tuple[tuple[int, int], ...],
+    keypoint_pairs: tuple[tuple[int, int], ...],
+) -> Sample:
+    keypoints, visibility = flip_keypoints(
+        sample["keypoints"],
+        sample["keypoint_visibility"],
+        keypoint_pairs,
+    )
+    flipped_mask = swap_left_right_channels(np.fliplr(sample["mask"]).copy(), left_right_pairs)
+    return {
+        "image": np.fliplr(sample["image"]).copy(),
+        "mask": flipped_mask,
+        "keypoints": keypoints,
+        "keypoint_visibility": visibility,
+    }
+
+
+def flip_keypoints(
+    keypoints: Float[np.ndarray, "keypoints 2"],
+    visibility: Float[np.ndarray, "*keypoints"],
+    keypoint_pairs: tuple[tuple[int, int], ...],
+) -> tuple[Float[np.ndarray, "keypoints 2"], Float[np.ndarray, "*keypoints"]]:
+    flipped_keypoints = keypoints.copy()
+    flipped_visibility = visibility.copy()
+    flipped_keypoints[:, 0] = 1 - flipped_keypoints[:, 0]
+    for left, right in keypoint_pairs:
+        flipped_keypoints[[left, right]] = flipped_keypoints[[right, left]]
+        flipped_visibility[[left, right]] = flipped_visibility[[right, left]]
+    return flipped_keypoints, flipped_visibility
+
+
+def normalized_to_pixels(
+    keypoints: Float[np.ndarray, "keypoints 2"],
+    width: int,
+    height: int,
+) -> Float[np.ndarray, "keypoints 2"]:
+    scale = np.array([width - 1, height - 1], dtype=np.float32)
+    return keypoints * scale
+
+
+def pixels_to_normalized(
+    keypoints: Float[np.ndarray, "keypoints 2"],
+    width: int,
+    height: int,
+) -> Float[np.ndarray, "keypoints 2"]:
+    scale = np.array([width - 1, height - 1], dtype=np.float32)
+    return keypoints / scale
+
+
+def points_inside_image(keypoints: Float[np.ndarray, "keypoints 2"]) -> Bool[np.ndarray, "*keypoints"]:
+    x = keypoints[:, 0]
+    y = keypoints[:, 1]
+    return (x >= 0) & (x <= 1) & (y >= 0) & (y <= 1)

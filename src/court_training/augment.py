@@ -72,19 +72,19 @@ class CourtAugment:
             mask=sample["mask"],
             keypoints=keypoints,
         )
+        keypoints = pixels_to_normalized(transformed["keypoints"], width, height)
+        visibility = sample["visibility"] * points_inside_image(keypoints)
         flipped = self.hflip(
             image=transformed["image"],
             masks=transformed["mask"],
-            keypoints=transformed["keypoints"],
-            visibility=sample["visibility"],
+            keypoints=keypoints,
+            visibility=visibility,
         )
-        keypoints = pixels_to_normalized(flipped["keypoints"], width, height)
-        visibility = flipped["visibility"] * points_inside_image(keypoints)
         return {
             "image": flipped["image"],
             "mask": flipped["masks"],
-            "keypoints": keypoints,
-            "visibility": visibility,
+            "keypoints": flipped["keypoints"],
+            "visibility": flipped["visibility"],
         }
 
 

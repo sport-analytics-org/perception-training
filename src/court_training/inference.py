@@ -68,7 +68,6 @@ def _predict_flipped(
         masks=prediction["masks"],
         keypoints=prediction["keypoints"] if keypoint_names else None,
         visibility=prediction["visibility"] if keypoint_names else None,
-        x_max=1,
         mask_names=mask_names,
         keypoint_names=keypoint_names,
     )

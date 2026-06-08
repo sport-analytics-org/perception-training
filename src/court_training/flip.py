@@ -35,7 +35,6 @@ class HorizontalFlip:
             masks=masks,
             keypoints=keypoints,
             visibility=visibility,
-            x_max=image.shape[-2] - 1,
             mask_names=self.mask_names,
             keypoint_names=self.keypoint_names,
         )
@@ -47,12 +46,11 @@ def flip_numpy(
     masks: Float[np.ndarray, "... H W N"],
     keypoints: Float[np.ndarray, "... K 2"],
     visibility: Float[np.ndarray, "... K"],
-    x_max: float,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
 ) -> dict[str, np.ndarray]:
     keypoints = keypoints.copy()
-    keypoints[..., 0] = x_max - keypoints[..., 0]
+    keypoints[..., 0] = 1 - keypoints[..., 0]
     masks = np.flip(masks, axis=-2)
     return {
         "image": np.flip(image, axis=-2).copy(),
@@ -67,7 +65,6 @@ def flip_torch(
     masks: Float[Tensor, "... N H W"] | None = None,
     keypoints: Float[Tensor, "... K 2"] | None = None,
     visibility: Float[Tensor, "... K"] | None = None,
-    x_max: float | None = None,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
 ) -> dict[str, Tensor]:
@@ -78,9 +75,8 @@ def flip_torch(
         masks = torch.flip(masks, dims=(-1,))
         output["masks"] = take_torch(masks, flip_indices(mask_names), dim=-3)
     if keypoints is not None:
-        assert x_max is not None
         keypoints = keypoints.clone()
-        keypoints[..., 0] = x_max - keypoints[..., 0]
+        keypoints[..., 0] = 1 - keypoints[..., 0]
         output["keypoints"] = take_torch(keypoints, flip_indices(keypoint_names), dim=-2)
     if visibility is not None:
         output["visibility"] = take_torch(visibility, flip_indices(keypoint_names), dim=-1)

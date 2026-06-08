@@ -41,19 +41,13 @@ def predict(
         )
 
         masks_by_scale.append(resize((prediction["masks"] + flipped["masks"]) / 2, output_size))
-        keypoints_by_scale.extend((prediction["keypoints"], flipped["keypoints"]))
-        visibility_by_scale.extend((prediction["visibility"], flipped["visibility"]))
-
-    keypoints = torch.empty(images.shape[0], 0, 2, device=images.device, dtype=images.dtype)
-    visibility = torch.empty(images.shape[0], 0, device=images.device, dtype=images.dtype)
-    if keypoints_by_scale:
-        keypoints = torch.stack(keypoints_by_scale).mean(dim=0)
-        visibility = torch.stack(visibility_by_scale).mean(dim=0)
+        keypoints_by_scale.append((prediction["keypoints"] + flipped["keypoints"]) / 2)
+        visibility_by_scale.append((prediction["visibility"] + flipped["visibility"]) / 2)
 
     return {
         "masks": torch.stack(masks_by_scale).mean(dim=0),
-        "keypoints": keypoints,
-        "visibility": visibility,
+        "keypoints": torch.stack(keypoints_by_scale).mean(dim=0),
+        "visibility": torch.stack(visibility_by_scale).mean(dim=0),
     }
 
 

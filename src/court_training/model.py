@@ -1,12 +1,10 @@
 import timm
 import torch
 from jaxtyping import Float
-from PIL import Image
 from torch import Tensor, nn
 from torch.nn import functional as F
 
 from court_training import inference
-from court_training.dataset import image_to_tensor
 
 
 class CourtSegmenter(nn.Module):
@@ -72,13 +70,6 @@ class CourtSegmenter(nn.Module):
         keypoints, visibility_logits, _ = self.decode_keypoints(features)
         return keypoints, visibility_logits
 
-    def predict_keypoints_tta(
-        self,
-        images: Float[Tensor, "B 3 H W"],
-        scales: tuple[float, ...],
-    ) -> tuple[Float[Tensor, "B K 2"], Float[Tensor, "B K"]]:
-        return inference.predict_keypoints(self, images, scales, self.keypoint_names)
-
     def decode_keypoints(
         self,
         features: Float[Tensor, "B C Hf Wf"],
@@ -115,16 +106,12 @@ class CourtSegmenter(nn.Module):
         return features
 
     @torch.no_grad()
-    def predict(self, image: Image.Image, scales: tuple[float, ...]) -> Float[Tensor, "N H W"]:
-        images = image_to_tensor(image.convert("RGB")).unsqueeze(0).to(self.device)
-        return self.predict_masks(images, scales).squeeze(0)
-
-    def predict_masks(
+    def predict(
         self,
         images: Float[Tensor, "B 3 H W"],
         scales: tuple[float, ...],
-    ) -> Float[Tensor, "B N H W"]:
-        return inference.predict_masks(self, images, scales, self.mask_names)
+    ) -> inference.Prediction:
+        return inference.predict(self, images, scales, self.mask_names, self.keypoint_names)
 
     @property
     def device(self) -> torch.device:

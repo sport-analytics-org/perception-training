@@ -1,3 +1,5 @@
+from typing import TypedDict
+
 import torch
 from jaxtyping import Float
 from torch import Tensor, nn
@@ -6,7 +8,31 @@ from torch.nn import functional as F
 from court_training.flip import flip_torch
 
 
-def predict_masks(
+class Prediction(TypedDict):
+    masks: Float[Tensor, "B N H W"]
+    keypoints: Float[Tensor, "B K 2"]
+    visibility: Float[Tensor, "B K"]
+
+
+def predict(
+    model: nn.Module,
+    images: Float[Tensor, "B 3 H W"],
+    scales: tuple[float, ...],
+    mask_names: tuple[str, ...],
+    keypoint_names: tuple[str, ...],
+) -> Prediction:
+    keypoints = torch.empty(images.shape[0], 0, 2, device=images.device, dtype=images.dtype)
+    visibility = torch.empty(images.shape[0], 0, device=images.device, dtype=images.dtype)
+    if keypoint_names:
+        keypoints, visibility = _predict_keypoints(model, images, scales, keypoint_names)
+    return {
+        "masks": _predict_masks(model, images, scales, mask_names),
+        "keypoints": keypoints,
+        "visibility": visibility,
+    }
+
+
+def _predict_masks(
     model: nn.Module,
     images: Float[Tensor, "B 3 H W"],
     scales: tuple[float, ...],
@@ -15,14 +41,14 @@ def predict_masks(
     output_size = images.shape[-2:]
     logits_by_scale = []
     for scale in scales:
-        scaled_images = resize_images(images, scale)
+        scaled_images = _resize_images(images, scale)
         logits = model(scaled_images)
-        logits = (logits + predict_flipped(model, scaled_images, mask_names)) / 2
+        logits = (logits + _predict_flipped(model, scaled_images, mask_names)) / 2
         logits_by_scale.append(F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False))
     return torch.stack(logits_by_scale).mean(dim=0)
 
 
-def predict_keypoints(
+def _predict_keypoints(
     model: nn.Module,
     images: Float[Tensor, "B 3 H W"],
     scales: tuple[float, ...],
@@ -31,9 +57,9 @@ def predict_keypoints(
     keypoints_by_scale = []
     visibility_by_scale = []
     for scale in scales:
-        scaled_images = resize_images(images, scale)
+        scaled_images = _resize_images(images, scale)
         keypoints, visibility = model.predict_keypoints(scaled_images)
-        flipped_keypoints, flipped_visibility = predict_flipped_keypoints(model, scaled_images, keypoint_names)
+        flipped_keypoints, flipped_visibility = _predict_flipped_keypoints(model, scaled_images, keypoint_names)
         keypoints_by_scale.extend((keypoints, flipped_keypoints))
         visibility_by_scale.extend((visibility, flipped_visibility))
     keypoints = torch.stack(keypoints_by_scale).mean(dim=0)
@@ -41,7 +67,7 @@ def predict_keypoints(
     return keypoints, visibility
 
 
-def predict_flipped(
+def _predict_flipped(
     model: nn.Module,
     images: Float[Tensor, "B 3 H W"],
     mask_names: tuple[str, ...],
@@ -54,7 +80,7 @@ def predict_flipped(
     return logits
 
 
-def predict_flipped_keypoints(
+def _predict_flipped_keypoints(
     model: nn.Module,
     images: Float[Tensor, "B 3 H W"],
     keypoint_names: tuple[str, ...],
@@ -75,5 +101,5 @@ def predict_flipped_keypoints(
     return flipped_keypoints, flipped_visibility
 
 
-def resize_images(images: Tensor, scale: float) -> Tensor:
+def _resize_images(images: Tensor, scale: float) -> Tensor:
     return F.interpolate(images, scale_factor=scale, mode="bilinear", align_corners=False)

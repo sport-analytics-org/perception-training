@@ -179,18 +179,17 @@ def evaluate(
 
     for batch in tqdm(loader, desc="Evaluating", leave=False):
         tensors = to_device(batch, device)
-        logits = model.predict_masks(tensors["images"], TTA_SCALES)
+        prediction = model.predict(tensors["images"], TTA_SCALES)
 
-        predicted_keypoints, visibility_logits = model.predict_keypoints_tta(tensors["images"], TTA_SCALES)
         visible = tensors["visibility"] > 0.5
         if visible.any():
-            error = (predicted_keypoints[visible] - tensors["keypoints"][visible]).norm(dim=-1)
+            error = (prediction["keypoints"][visible] - tensors["keypoints"][visible]).norm(dim=-1)
             total_keypoint_error += error.sum().item()
             total_visible_keypoints += int(visible.sum().item())
-        total_visibility_correct += int(((visibility_logits.sigmoid() > 0.5) == visible).sum().item())
+        total_visibility_correct += int(((prediction["visibility"].sigmoid() > 0.5) == visible).sum().item())
         total_visibility += tensors["visibility"].numel()
 
-        predictions = logits.sigmoid() > 0.5
+        predictions = prediction["masks"].sigmoid() > 0.5
         targets = tensors["masks"] > 0.5
         intersection += (predictions & targets).sum(dim=(0, 2, 3))
         union += (predictions | targets).sum(dim=(0, 2, 3))

@@ -50,7 +50,14 @@ class MaskDataset(Dataset):
         sample = self.load(index, self.image_size)
         if self.transform:
             sample = self.transform(sample)
-        return to_tensor(sample)
+        image = torch.from_numpy(sample["image"].astype(np.float32) / 255.0).permute(2, 0, 1)
+        image = (image - IMAGE_MEAN) / IMAGE_STD
+        return {
+            "image": image,
+            "mask": torch.from_numpy(sample["mask"]).permute(2, 0, 1),
+            "keypoints": torch.from_numpy(sample["keypoints"]),
+            "visibility": torch.from_numpy(sample["visibility"]),
+        }
 
     def load(self, index: int, image_size: tuple[int, int]) -> Sample:
         image_path, mask_path = self.items[index]
@@ -95,13 +102,3 @@ def image_to_tensor(image: Image.Image) -> Float[Tensor, "3 H W"]:
     image_tensor = torch.from_numpy(array).permute(2, 0, 1)
     return (image_tensor - IMAGE_MEAN) / IMAGE_STD
 
-
-def to_tensor(sample: Sample) -> TensorSample:
-    image = torch.from_numpy(sample["image"].astype(np.float32) / 255.0).permute(2, 0, 1)
-    image = (image - IMAGE_MEAN) / IMAGE_STD
-    return {
-        "image": image,
-        "mask": torch.from_numpy(sample["mask"]).permute(2, 0, 1),
-        "keypoints": torch.from_numpy(sample["keypoints"]),
-        "visibility": torch.from_numpy(sample["visibility"]),
-    }

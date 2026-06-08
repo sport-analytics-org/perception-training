@@ -81,19 +81,11 @@ class CourtAugment:
             keypoints=transformed["keypoints"],
             visibility=transformed["visibility"],
         )
-        image = flipped["image"]
-        mask = flipped["masks"]
-        keypoints = flipped["keypoints"]
-        visibility = flipped["visibility"]
-        assert isinstance(image, np.ndarray)
-        assert isinstance(mask, np.ndarray)
-        assert isinstance(keypoints, np.ndarray)
-        assert isinstance(visibility, np.ndarray)
-        keypoints = pixels_to_normalized(keypoints, width, height)
-        visibility = visibility * points_inside_image(keypoints)
+        keypoints = pixels_to_normalized(flipped["keypoints"], width, height)
+        visibility = flipped["visibility"] * points_inside_image(keypoints)
         return {
-            "image": image,
-            "mask": mask,
+            "image": flipped["image"],
+            "mask": flipped["masks"],
             "keypoints": keypoints,
             "visibility": visibility,
         }

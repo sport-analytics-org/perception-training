@@ -1,7 +1,24 @@
+from typing import NotRequired, TypedDict
+
 import numpy as np
 import torch
 from jaxtyping import Float
 from torch import Tensor
+
+
+class NumpyFlip(TypedDict):
+    image: Float[np.ndarray, "... H W 3"]
+    masks: Float[np.ndarray, "... H W N"]
+    keypoints: Float[np.ndarray, "... K 2"]
+    visibility: Float[np.ndarray, "... K"]
+    applied: NotRequired[bool]
+
+
+class TorchFlip(TypedDict):
+    image: NotRequired[Float[Tensor, "... 3 H W"] | None]
+    masks: NotRequired[Float[Tensor, "... N H W"] | None]
+    keypoints: NotRequired[Float[Tensor, "... K 2"] | None]
+    visibility: NotRequired[Float[Tensor, "... K"] | None]
 
 
 class HorizontalFlip:
@@ -17,11 +34,11 @@ class HorizontalFlip:
 
     def __call__(
         self,
-        image: Float[np.ndarray, "... H W 3"] | None = None,
-        masks: Float[np.ndarray, "... H W N"] | None = None,
-        keypoints: Float[np.ndarray, "... K 2"] | None = None,
-        visibility: Float[np.ndarray, "... K"] | None = None,
-    ) -> dict[str, object]:
+        image: Float[np.ndarray, "... H W 3"],
+        masks: Float[np.ndarray, "... H W N"],
+        keypoints: Float[np.ndarray, "... K 2"],
+        visibility: Float[np.ndarray, "... K"],
+    ) -> NumpyFlip:
         if np.random.random() >= self.p:
             return {
                 "image": image,
@@ -36,7 +53,7 @@ class HorizontalFlip:
             masks=masks,
             keypoints=keypoints,
             visibility=visibility,
-            x_max=image.shape[-2] - 1 if image is not None else None,
+            x_max=image.shape[-2] - 1,
             mask_names=self.mask_names,
             keypoint_names=self.keypoint_names,
         )
@@ -45,28 +62,23 @@ class HorizontalFlip:
 
 
 def flip_numpy(
-    image: Float[np.ndarray, "... H W 3"] | None = None,
-    masks: Float[np.ndarray, "... H W N"] | None = None,
-    keypoints: Float[np.ndarray, "... K 2"] | None = None,
-    visibility: Float[np.ndarray, "... K"] | None = None,
-    x_max: float | None = None,
+    image: Float[np.ndarray, "... H W 3"],
+    masks: Float[np.ndarray, "... H W N"],
+    keypoints: Float[np.ndarray, "... K 2"],
+    visibility: Float[np.ndarray, "... K"],
+    x_max: float,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
-) -> dict[str, object]:
-    output = {}
-    if image is not None:
-        output["image"] = np.flip(image, axis=-2).copy()
-    if masks is not None:
-        masks = np.flip(masks, axis=-2)
-        output["masks"] = np.take(masks, flip_indices(mask_names), axis=-1).copy()
-    if keypoints is not None:
-        assert x_max is not None
-        keypoints = keypoints.copy()
-        keypoints[..., 0] = x_max - keypoints[..., 0]
-        output["keypoints"] = np.take(keypoints, flip_indices(keypoint_names), axis=-2)
-    if visibility is not None:
-        output["visibility"] = np.take(visibility, flip_indices(keypoint_names), axis=-1)
-    return output
+) -> NumpyFlip:
+    keypoints = keypoints.copy()
+    keypoints[..., 0] = x_max - keypoints[..., 0]
+    masks = np.flip(masks, axis=-2)
+    return {
+        "image": np.flip(image, axis=-2).copy(),
+        "masks": np.take(masks, flip_indices(mask_names), axis=-1).copy(),
+        "keypoints": np.take(keypoints, flip_indices(keypoint_names), axis=-2),
+        "visibility": np.take(visibility, flip_indices(keypoint_names), axis=-1),
+    }
 
 
 def flip_torch(
@@ -77,8 +89,8 @@ def flip_torch(
     x_max: float | None = None,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
-) -> dict[str, object]:
-    output = {}
+) -> TorchFlip:
+    output: TorchFlip = {}
     if image is not None:
         output["image"] = torch.flip(image, dims=(-1,))
     if masks is not None:
@@ -95,7 +107,7 @@ def flip_torch(
 
 
 def take_torch(tensor: Tensor, indices: tuple[int, ...], dim: int) -> Tensor:
-    index = torch.tensor(indices, device=tensor.device)
+    index = torch.tensor(indices, device=tensor.device, dtype=torch.long)
     return torch.index_select(tensor, dim=dim % tensor.ndim, index=index)
 
 

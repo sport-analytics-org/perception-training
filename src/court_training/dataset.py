@@ -16,15 +16,15 @@ from court_training.constants import IMAGE_MEAN, IMAGE_STD
 class Sample(TypedDict):
     image: UInt8[np.ndarray, "H W 3"]
     mask: Float[np.ndarray, "H W N"]
-    keypoints: Float[np.ndarray, "keypoints 2"]
-    keypoint_visibility: Float[np.ndarray, "*keypoints"]
+    keypoints: Float[np.ndarray, "K 2"]
+    keypoint_visibility: Float[np.ndarray, "*K"]
 
 
 class TensorSample(TypedDict):
     image: Float[Tensor, "3 H W"]
     mask: Float[Tensor, "N H W"]
-    keypoints: Float[Tensor, "keypoints 2"]
-    keypoint_visibility: Float[Tensor, "*keypoints"]
+    keypoints: Float[Tensor, "K 2"]
+    keypoint_visibility: Float[Tensor, "*K"]
 
 
 class MaskDataset(Dataset):
@@ -82,7 +82,7 @@ def image_mask_pairs(root: Path) -> list[tuple[Path, Path]]:
     return pairs
 
 
-def read_keypoints(path: Path) -> tuple[Float[np.ndarray, "keypoints 2"], Float[np.ndarray, "*keypoints"]]:
+def read_keypoints(path: Path) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarray, "*K"]]:
     data = json.loads(path.read_text())
     points = data["points"]
     keypoints = np.array([point["position"] for point in points], dtype=np.float32, copy=True)

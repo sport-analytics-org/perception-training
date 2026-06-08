@@ -120,35 +120,35 @@ def split_side_names(names: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str
 
 
 def order_keypoints(
-    keypoints: Float[np.ndarray, "keypoints 2"],
-    visibility: Float[np.ndarray, "*keypoints"],
+    keypoints: Float[np.ndarray, "K 2"],
+    visibility: Float[np.ndarray, "*K"],
     ids: tuple[tuple[str, str], ...],
     output_ids: tuple[tuple[str, str], ...],
-) -> tuple[Float[np.ndarray, "keypoints 2"], Float[np.ndarray, "*keypoints"]]:
+) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarray, "*K"]]:
     index_by_id = {keypoint_id: index for index, keypoint_id in enumerate(ids)}
     order = [index_by_id[keypoint_id] for keypoint_id in output_ids]
     return keypoints[order], visibility[order]
 
 
 def normalized_to_pixels(
-    keypoints: Float[np.ndarray, "keypoints 2"],
+    keypoints: Float[np.ndarray, "K 2"],
     width: int,
     height: int,
-) -> Float[np.ndarray, "keypoints 2"]:
+) -> Float[np.ndarray, "K 2"]:
     scale = np.array([width - 1, height - 1], dtype=np.float32)
     return keypoints * scale
 
 
 def pixels_to_normalized(
-    keypoints: Float[np.ndarray, "keypoints 2"],
+    keypoints: Float[np.ndarray, "K 2"],
     width: int,
     height: int,
-) -> Float[np.ndarray, "keypoints 2"]:
+) -> Float[np.ndarray, "K 2"]:
     scale = np.array([width - 1, height - 1], dtype=np.float32)
     return keypoints / scale
 
 
-def points_inside_image(keypoints: Float[np.ndarray, "keypoints 2"]) -> Bool[np.ndarray, "*keypoints"]:
+def points_inside_image(keypoints: Float[np.ndarray, "K 2"]) -> Bool[np.ndarray, "*K"]:
     x = keypoints[:, 0]
     y = keypoints[:, 1]
     return (x >= 0) & (x <= 1) & (y >= 0) & (y <= 1)

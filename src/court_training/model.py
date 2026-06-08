@@ -21,15 +21,7 @@ class CourtSegmenter(nn.Module):
         self.mask_names = mask_names
         self.keypoint_names = keypoint_names
         self.backbone = timm.create_model(backbone, pretrained=pretrained, num_classes=0, dynamic_img_size=True)
-        self.decoder = nn.Sequential(
-            nn.Conv2d(self.backbone.embed_dim, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.GELU(),
-            nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.GELU(),
-            nn.Conv2d(256, num_masks, kernel_size=1),
-        )
+        self.decoder = ProgressiveMaskHead(self.backbone.embed_dim, num_masks)
         self.keypoint_heatmaps = None
         self.keypoint_objectness = None
         if num_keypoints is not None:
@@ -111,3 +103,31 @@ def softargmax_2d(heatmaps: Float[Tensor, "B K H W"], temperature: float = 4.0) 
     grid_y, grid_x = torch.meshgrid(y, x, indexing="ij")
     grid = torch.stack((grid_x, grid_y), dim=-1).reshape(height * width, 2)
     return torch.einsum("bkp,pd->bkd", probabilities, grid)
+
+
+class ProgressiveMaskHead(nn.Module):
+    def __init__(self, channels: int, num_masks: int) -> None:
+        super().__init__()
+        self.projection = ConvBlock(channels, 256)
+        self.refine = nn.ModuleList([ConvBlock(256, 256) for _ in range(4)])
+        self.output = nn.Conv2d(256, num_masks, kernel_size=1)
+
+    def forward(self, features: Float[Tensor, "B C Hf Wf"]) -> Float[Tensor, "B N H W"]:
+        features = self.projection(features)
+        for block in self.refine:
+            features = F.interpolate(features, scale_factor=2, mode="bilinear", align_corners=False)
+            features = block(features)
+        return self.output(features)
+
+
+class ConvBlock(nn.Module):
+    def __init__(self, input_channels: int, output_channels: int) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(input_channels, output_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(output_channels),
+            nn.GELU(),
+        )
+
+    def forward(self, features: Float[Tensor, "B C H W"]) -> Float[Tensor, "B C H W"]:
+        return self.net(features)

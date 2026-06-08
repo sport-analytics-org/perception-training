@@ -5,7 +5,7 @@ from jaxtyping import Bool, Float
 from court_training.dataset import Sample
 from court_training.flip import HorizontalFlip
 
-KEYPOINT_LABEL_FIELDS = ["keypoint_visibility"]
+KEYPOINT_LABEL_FIELDS = ["visibility"]
 
 
 class CourtAugment:
@@ -73,13 +73,13 @@ class CourtAugment:
             image=sample["image"],
             mask=sample["mask"],
             keypoints=keypoints,
-            keypoint_visibility=sample["keypoint_visibility"],
+            visibility=sample["visibility"],
         )
         flipped = self.hflip(
             image=transformed["image"],
             masks=transformed["mask"],
             keypoints=transformed["keypoints"],
-            visibility=transformed["keypoint_visibility"],
+            visibility=transformed["visibility"],
         )
         image = flipped["image"]
         mask = flipped["masks"]
@@ -95,7 +95,7 @@ class CourtAugment:
             "image": image,
             "mask": mask,
             "keypoints": keypoints,
-            "keypoint_visibility": visibility,
+            "visibility": visibility,
         }
 
 

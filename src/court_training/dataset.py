@@ -17,14 +17,14 @@ class Sample(TypedDict):
     image: UInt8[np.ndarray, "H W 3"]
     mask: Float[np.ndarray, "H W N"]
     keypoints: Float[np.ndarray, "K 2"]
-    keypoint_visibility: Float[np.ndarray, "*K"]
+    visibility: Float[np.ndarray, "*K"]
 
 
 class TensorSample(TypedDict):
     image: Float[Tensor, "3 H W"]
     mask: Float[Tensor, "N H W"]
     keypoints: Float[Tensor, "K 2"]
-    keypoint_visibility: Float[Tensor, "*K"]
+    visibility: Float[Tensor, "*K"]
 
 
 class MaskDataset(Dataset):
@@ -67,7 +67,7 @@ class MaskDataset(Dataset):
             "image": image_array,
             "mask": self.load_mask(bitfield_array),
             "keypoints": keypoints,
-            "keypoint_visibility": visibility,
+            "visibility": visibility,
         }
 
 
@@ -103,5 +103,5 @@ def to_tensor(sample: Sample) -> TensorSample:
         "image": image,
         "mask": torch.from_numpy(sample["mask"]).permute(2, 0, 1),
         "keypoints": torch.from_numpy(sample["keypoints"]),
-        "keypoint_visibility": torch.from_numpy(sample["keypoint_visibility"]),
+        "visibility": torch.from_numpy(sample["visibility"]),
     }

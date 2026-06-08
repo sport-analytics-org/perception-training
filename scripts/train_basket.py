@@ -155,7 +155,7 @@ def train_epoch(
             prediction["visibility"],
             prediction["heatmaps"],
             tensors["keypoints"],
-            tensors["keypoint_visibility"],
+            tensors["visibility"],
         )
         loss = mask_loss + keypoint_loss_weight * point_loss
         loss.backward()
@@ -186,12 +186,12 @@ def evaluate(
         tensors = to_device(batch, device)
         prediction = model.predict(tensors["image"], TTA_SCALES)
 
-        visible = tensors["keypoint_visibility"] > 0.5
+        visible = tensors["visibility"] > 0.5
         error = (prediction["keypoints"][visible] - tensors["keypoints"][visible]).norm(dim=-1)
         total_keypoint_error += error.sum().item()
         total_visible_keypoints += int(visible.sum().item())
         total_visibility_correct += int(((prediction["visibility"].sigmoid() > 0.5) == visible).sum().item())
-        total_visibility += tensors["keypoint_visibility"].numel()
+        total_visibility += tensors["visibility"].numel()
 
         predictions = prediction["masks"].sigmoid() > 0.5
         targets = tensors["mask"] > 0.5

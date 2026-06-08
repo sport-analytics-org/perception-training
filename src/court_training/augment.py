@@ -3,13 +3,17 @@ import numpy as np
 from jaxtyping import Bool, Float
 
 from court_training.dataset import Sample
+from court_training.flip import HorizontalFlip
+
+KEYPOINT_LABEL_FIELDS = ["class_labels", "class_sides", "keypoint_visibility"]
 
 
 class CourtAugment:
     def __init__(
         self,
-        left_right_pairs: tuple[tuple[int, int], ...],
-        keypoint_pairs: tuple[tuple[int, int], ...] = (),
+        mask_names: tuple[str, ...],
+        image_size: tuple[int, int],
+        keypoint_names: tuple[str, ...],
         crop_cutout: bool = True,
         crop_p: float = 0.7,
         cutout_p: float = 0.5,
@@ -28,127 +32,102 @@ class CourtAugment:
         cutout_holes: tuple[int, int] = (1, 4),
         cutout_size: tuple[float, float] = (0.04, 0.18),
     ) -> None:
-        self.left_right_pairs = left_right_pairs
-        self.keypoint_pairs = keypoint_pairs
-        self.crop_cutout = crop_cutout
-        self.crop_p = crop_p
-        self.cutout_p = cutout_p
-        self.flip_p = flip_p
-        self.affine_p = affine_p
-        self.affine_scale = affine_scale
-        self.affine_translate = affine_translate
-        self.affine_rotate = affine_rotate
-        self.affine_shear = affine_shear
-        self.color_p = color_p
-        self.color_strength = color_strength
-        self.blur_p = blur_p
-        self.blur_sigma = blur_sigma
-        self.crop_scale = crop_scale
-        self.crop_ratio = crop_ratio
-        self.cutout_holes = cutout_holes
-        self.cutout_size = cutout_size
+        self.keypoint_sides, self.keypoint_labels = split_side_names(keypoint_names)
+        self.keypoint_ids = tuple(zip(self.keypoint_labels, self.keypoint_sides, strict=True))
+        self.hflip = HorizontalFlip(mask_names=mask_names, keypoint_names=keypoint_names, p=flip_p)
+
+        height, width = image_size
+        transforms = [
+            A.Affine(
+                scale=affine_scale,
+                translate_percent=affine_translate,
+                rotate=affine_rotate,
+                shear=affine_shear,
+                p=affine_p,
+            ),
+            A.ColorJitter(
+                brightness=color_strength,
+                contrast=color_strength * 1.4,
+                saturation=color_strength,
+                hue=0.0,
+                p=color_p,
+            ),
+            A.GaussianBlur(blur_limit=(3, 3), sigma_limit=blur_sigma, p=blur_p),
+        ]
+        if crop_cutout:
+            crop = A.RandomResizedCrop(size=(height, width), scale=crop_scale, ratio=crop_ratio, p=crop_p)
+            cutout = A.CoarseDropout(
+                num_holes_range=cutout_holes,
+                hole_height_range=cutout_size,
+                hole_width_range=cutout_size,
+                fill="random",
+                p=cutout_p,
+            )
+            transforms.insert(0, crop)
+            transforms.append(cutout)
+
+        self.geom = A.Compose(transforms, keypoint_params=keypoint_params_xy())
 
     def __call__(self, sample: Sample) -> Sample:
         height, width = sample["image"].shape[:2]
         keypoints = normalized_to_pixels(sample["keypoints"], width, height)
-        transformed = self.transform((width, height))(
+        transformed = self.geom(
             image=sample["image"],
             mask=sample["mask"],
             keypoints=keypoints,
+            class_labels=np.array(self.keypoint_labels),
+            class_sides=np.array(self.keypoint_sides),
+            keypoint_visibility=sample["keypoint_visibility"],
         )
+        flipped = self.hflip(
+            image=transformed["image"],
+            masks=transformed["mask"],
+            keypoints=transformed["keypoints"],
+            visibility=transformed["keypoint_visibility"],
+        )
+        transformed["image"] = flipped["image"]
+        transformed["mask"] = flipped["masks"]
+        transformed["keypoints"] = flipped["keypoints"]
+        transformed["keypoint_visibility"] = flipped["visibility"]
+
         keypoints = pixels_to_normalized(np.asarray(transformed["keypoints"], dtype=np.float32), width, height)
-        visibility = sample["keypoint_visibility"] * points_inside_image(keypoints)
-        sample = {
+        visibility = np.asarray(transformed["keypoint_visibility"], dtype=np.float32)
+        visibility = visibility * points_inside_image(keypoints)
+        sides = tuple(str(side) for side in transformed["class_sides"])
+        labels = tuple(str(label) for label in transformed["class_labels"])
+        ids = tuple(zip(labels, sides, strict=True))
+        keypoints, visibility = order_keypoints(keypoints, visibility, ids, self.keypoint_ids)
+        return {
             "image": transformed["image"],
             "mask": transformed["mask"].astype(np.float32),
             "keypoints": keypoints,
             "keypoint_visibility": visibility.astype(np.float32),
         }
-        if np.random.random() < self.flip_p:
-            sample = horizontal_flip_sample(sample, self.left_right_pairs, self.keypoint_pairs)
-        return sample
-
-    def transform(self, image_size: tuple[int, int]) -> A.Compose:
-        width, height = image_size
-        transforms = [
-            A.Affine(
-                scale=self.affine_scale,
-                translate_percent=self.affine_translate,
-                rotate=self.affine_rotate,
-                shear=self.affine_shear,
-                p=self.affine_p,
-            ),
-            A.ColorJitter(
-                brightness=self.color_strength,
-                contrast=self.color_strength * 1.4,
-                saturation=self.color_strength,
-                hue=0.0,
-                p=self.color_p,
-            ),
-            A.GaussianBlur(blur_limit=(3, 3), sigma_limit=self.blur_sigma, p=self.blur_p),
-        ]
-        if self.crop_cutout:
-            crop = A.RandomResizedCrop(
-                size=(height, width),
-                scale=self.crop_scale,
-                ratio=self.crop_ratio,
-                p=self.crop_p,
-            )
-            cutout = A.CoarseDropout(
-                num_holes_range=self.cutout_holes,
-                hole_height_range=self.cutout_size,
-                hole_width_range=self.cutout_size,
-                fill="random",
-                p=self.cutout_p,
-            )
-            transforms.insert(0, crop)
-            transforms.append(cutout)
-        keypoint_params = A.KeypointParams(format="xy", remove_invisible=False)
-        return A.Compose(transforms, keypoint_params=keypoint_params)
 
 
-def swap_left_right_channels(
-    mask: Float[np.ndarray, "H W N"],
-    left_right_pairs: tuple[tuple[int, int], ...],
-) -> Float[np.ndarray, "H W N"]:
-    swapped = mask.copy()
-    for left, right in left_right_pairs:
-        swapped[:, :, left] = mask[:, :, right]
-        swapped[:, :, right] = mask[:, :, left]
-    return swapped
+def keypoint_params_xy() -> A.KeypointParams:
+    return A.KeypointParams(format="xy", label_fields=KEYPOINT_LABEL_FIELDS, remove_invisible=False)
 
 
-def horizontal_flip_sample(
-    sample: Sample,
-    left_right_pairs: tuple[tuple[int, int], ...],
-    keypoint_pairs: tuple[tuple[int, int], ...],
-) -> Sample:
-    keypoints, visibility = flip_keypoints(
-        sample["keypoints"],
-        sample["keypoint_visibility"],
-        keypoint_pairs,
-    )
-    flipped_mask = swap_left_right_channels(np.fliplr(sample["mask"]).copy(), left_right_pairs)
-    return {
-        "image": np.fliplr(sample["image"]).copy(),
-        "mask": flipped_mask,
-        "keypoints": keypoints,
-        "keypoint_visibility": visibility,
-    }
+def split_side_names(names: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    sides = []
+    labels = []
+    for name in names:
+        side, label = name.split("_", 1)
+        sides.append(side)
+        labels.append(label)
+    return tuple(sides), tuple(labels)
 
 
-def flip_keypoints(
+def order_keypoints(
     keypoints: Float[np.ndarray, "keypoints 2"],
     visibility: Float[np.ndarray, "*keypoints"],
-    keypoint_pairs: tuple[tuple[int, int], ...],
+    ids: tuple[tuple[str, str], ...],
+    output_ids: tuple[tuple[str, str], ...],
 ) -> tuple[Float[np.ndarray, "keypoints 2"], Float[np.ndarray, "*keypoints"]]:
-    flipped_keypoints = keypoints.copy()
-    flipped_visibility = visibility.copy()
-    flipped_keypoints[:, 0] = 1 - flipped_keypoints[:, 0]
-    for left, right in keypoint_pairs:
-        flipped_keypoints[[left, right]] = flipped_keypoints[[right, left]]
-        flipped_visibility[[left, right]] = flipped_visibility[[right, left]]
-    return flipped_keypoints, flipped_visibility
+    index_by_id = {keypoint_id: index for index, keypoint_id in enumerate(ids)}
+    order = [index_by_id[keypoint_id] for keypoint_id in output_ids]
+    return keypoints[order], visibility[order]
 
 
 def normalized_to_pixels(

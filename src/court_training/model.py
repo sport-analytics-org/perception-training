@@ -1,3 +1,4 @@
+import numpy as np
 import timm
 import torch
 from jaxtyping import Float
@@ -6,6 +7,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from court_training.dataset import image_to_tensor
+from court_training.flip import flip
 
 
 class CourtSegmenter(nn.Module):
@@ -13,12 +15,12 @@ class CourtSegmenter(nn.Module):
         self,
         num_masks: int,
         num_keypoints: int | None = None,
-        left_right_pairs: tuple[tuple[int, int], ...] = (),
+        mask_names: tuple[str, ...] = (),
         backbone: str = "vit_large_patch16_dinov3",
         pretrained: bool = True,
     ) -> None:
         super().__init__()
-        self.left_right_pairs = left_right_pairs
+        self.mask_names = mask_names
         self.backbone = timm.create_model(backbone, pretrained=pretrained, num_classes=0, dynamic_img_size=True)
         self.decoder = nn.Sequential(
             nn.Conv2d(self.backbone.embed_dim, 256, kernel_size=3, padding=1),
@@ -115,9 +117,13 @@ class CourtSegmenter(nn.Module):
         return torch.stack(logits_by_scale).mean(dim=0).squeeze(0)
 
     def predict_flipped(self, images: Float[Tensor, "B 3 H W"]) -> Float[Tensor, "B N H W"]:
-        logits = self(torch.flip(images, dims=(-1,)))
-        logits = torch.flip(logits, dims=(-1,))
-        return swap_left_right_channels(logits, self.left_right_pairs)
+        images_numpy = images.detach().cpu().permute(0, 2, 3, 1).numpy()
+        flipped_images = flip(image=images_numpy)["image"]
+        flipped_images = numpy_images_to_tensor(flipped_images, images)
+        flipped_logits = self(flipped_images)
+        logits_numpy = flipped_logits.detach().cpu().permute(0, 2, 3, 1).numpy()
+        logits_numpy = flip(masks=logits_numpy, mask_names=self.mask_names)["masks"]
+        return numpy_masks_to_tensor(logits_numpy, flipped_logits)
 
     @property
     def device(self) -> torch.device:
@@ -128,12 +134,14 @@ def resize_images(images: Tensor, scale: float) -> Tensor:
     return F.interpolate(images, scale_factor=scale, mode="bilinear", align_corners=False)
 
 
-def swap_left_right_channels(tensor: Tensor, left_right_pairs: tuple[tuple[int, int], ...]) -> Tensor:
-    swapped = tensor.clone()
-    for left, right in left_right_pairs:
-        swapped[:, left] = tensor[:, right]
-        swapped[:, right] = tensor[:, left]
-    return swapped
+def numpy_images_to_tensor(images: np.ndarray, like: Tensor) -> Tensor:
+    tensor = torch.from_numpy(images.copy()).permute(0, 3, 1, 2)
+    return tensor.to(device=like.device, dtype=like.dtype)
+
+
+def numpy_masks_to_tensor(masks: np.ndarray, like: Tensor) -> Tensor:
+    tensor = torch.from_numpy(masks.copy()).permute(0, 3, 1, 2)
+    return tensor.to(device=like.device, dtype=like.dtype)
 
 
 def softargmax_2d(heatmaps: Float[Tensor, "B K H W"], temperature: float = 4.0) -> Float[Tensor, "B K 2"]:

@@ -21,29 +21,8 @@ from court_training.model import CourtSegmenter, resize_images
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
 
 
-def side_pairs(names: tuple[str, ...]) -> tuple[tuple[int, int], ...]:
-    index_by_name = {name: index for index, name in enumerate(names)}
-    left_names = [name for name in names if name.startswith("left_")]
-    pairs = []
-    for left_name in left_names:
-        right_name = f"right_{left_name.removeprefix('left_')}"
-        pairs.append((index_by_name[left_name], index_by_name[right_name]))
-    return tuple(pairs)
-
-
-def keypoint_pairs(points: Float[np.ndarray, "keypoints 2"]) -> tuple[tuple[int, int], ...]:
-    point_index = {(round(float(x), 4), round(float(y), 4)): index for index, (x, y) in enumerate(points)}
-    pairs = []
-    for index, (x, y) in enumerate(points):
-        mirrored_index = point_index[(round(float(-x), 4), round(float(y), 4))]
-        if index < mirrored_index:
-            pairs.append((index, mirrored_index))
-    return tuple(pairs)
-
-
 BASKETBALL_MASK_NAMES = tuple(NbaCourt.areas())
-BASKETBALL_LEFT_RIGHT_PAIRS = side_pairs(BASKETBALL_MASK_NAMES)
-BASKETBALL_KEYPOINT_PAIRS = keypoint_pairs(NbaCourt.keypoints())
+BASKETBALL_KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
 TRAIN_ROOT_ARGUMENT = typer.Argument(help="Flat exported training dataset root.")
 VAL_ROOT_ARGUMENT = typer.Argument(help="Flat exported validation dataset root.")
 OUTPUT_DIR_ARGUMENT = typer.Argument(help="Directory where checkpoints are written.")
@@ -82,7 +61,7 @@ def main(
         train_root.expanduser().resolve(),
         load_mask=load_mask,
         image_size=image_size,
-        transform=CourtAugment(BASKETBALL_LEFT_RIGHT_PAIRS, BASKETBALL_KEYPOINT_PAIRS, crop_cutout),
+        transform=CourtAugment(BASKETBALL_MASK_NAMES, image_size, BASKETBALL_KEYPOINT_NAMES, crop_cutout),
     )
     eval_data = MaskDataset(val_root.expanduser().resolve(), load_mask=load_mask, image_size=image_size)
     train_loader = DataLoader(
@@ -100,11 +79,11 @@ def main(
 
     device = training_device()
     num_masks = len(BASKETBALL_MASK_NAMES)
-    num_keypoints = len(train_data.load(0, image_size)["keypoints"])
+    num_keypoints = len(BASKETBALL_KEYPOINT_NAMES)
     model = CourtSegmenter(
         num_masks=num_masks,
         num_keypoints=num_keypoints,
-        left_right_pairs=BASKETBALL_LEFT_RIGHT_PAIRS,
+        mask_names=BASKETBALL_MASK_NAMES,
         backbone=backbone,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)

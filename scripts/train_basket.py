@@ -140,23 +140,24 @@ def train_epoch(
     total_keypoint_loss = 0.0
     total_images = 0
     for batch in tqdm(loader, desc="Training", leave=False):
-        images, masks, keypoints, visibility = batch_to_tensors(batch, device)
+        tensors = to_tensor(batch, device)
         optimizer.zero_grad(set_to_none=True)
-        mask_logits, predicted_keypoints, visibility_logits, heatmaps = model.forward_with_keypoints(images)
-        mask_loss = segmentation_loss(mask_logits, masks)
+        mask_logits, predicted_keypoints, visibility_logits, heatmaps = model.forward_with_keypoints(tensors["images"])
+        mask_loss = segmentation_loss(mask_logits, tensors["masks"])
         point_loss = keypoint_loss(
             predicted_keypoints,
             visibility_logits,
             heatmaps,
-            keypoints,
-            visibility,
+            tensors["keypoints"],
+            tensors["visibility"],
         )
         loss = mask_loss + keypoint_loss_weight * point_loss
         loss.backward()
         optimizer.step()
-        total_segmentation_loss += mask_loss.item() * images.shape[0]
-        total_keypoint_loss += point_loss.item() * images.shape[0]
-        total_images += images.shape[0]
+        batch_size = tensors["images"].shape[0]
+        total_segmentation_loss += mask_loss.item() * batch_size
+        total_keypoint_loss += point_loss.item() * batch_size
+        total_images += batch_size
     return total_segmentation_loss / total_images, total_keypoint_loss / total_images
 
 
@@ -176,20 +177,20 @@ def evaluate(
     total_visibility = 0
 
     for batch in tqdm(loader, desc="Evaluating", leave=False):
-        images, masks, keypoints, visibility = batch_to_tensors(batch, device)
-        logits = predict_multiscale(model, images, TTA_SCALES)
+        tensors = to_tensor(batch, device)
+        logits = predict_multiscale(model, tensors["images"], TTA_SCALES)
 
-        predicted_keypoints, visibility_logits = model.predict_keypoints(images)
-        visible = visibility > 0.5
+        predicted_keypoints, visibility_logits = model.predict_keypoints(tensors["images"])
+        visible = tensors["visibility"] > 0.5
         if visible.any():
-            error = (predicted_keypoints[visible] - keypoints[visible]).norm(dim=-1)
+            error = (predicted_keypoints[visible] - tensors["keypoints"][visible]).norm(dim=-1)
             total_keypoint_error += error.sum().item()
             total_visible_keypoints += int(visible.sum().item())
         total_visibility_correct += int(((visibility_logits.sigmoid() > 0.5) == visible).sum().item())
-        total_visibility += visibility.numel()
+        total_visibility += tensors["visibility"].numel()
 
         predictions = logits.sigmoid() > 0.5
-        targets = masks > 0.5
+        targets = tensors["masks"] > 0.5
         intersection += (predictions & targets).sum(dim=(0, 2, 3))
         union += (predictions | targets).sum(dim=(0, 2, 3))
 
@@ -253,21 +254,21 @@ def load_mask(bitfield: UInt8[np.ndarray, "H W"]) -> Float[np.ndarray, "H W N"]:
     return np.stack(masks, axis=-1).astype(np.float32)
 
 
-def batch_to_tensors(
+def to_tensor(
     batch: dict[str, Tensor],
     device: torch.device,
-) -> tuple[
-    Float[Tensor, "B 3 H W"],
-    Float[Tensor, "B N H W"],
-    Float[Tensor, "B K 2"],
-    Float[Tensor, "B K"],
-]:
+) -> dict[str, Tensor]:
     images = batch["image"].to(device=device, dtype=torch.float32).permute(0, 3, 1, 2) / 255.0
     masks = batch["mask"].to(device=device, dtype=torch.float32).permute(0, 3, 1, 2)
     keypoints = batch["keypoints"].to(device=device, dtype=torch.float32)
     visibility = batch["keypoint_visibility"].to(device=device, dtype=torch.float32)
     images = (images - IMAGE_MEAN.to(device)) / IMAGE_STD.to(device)
-    return images, masks, keypoints, visibility
+    return {
+        "images": images,
+        "masks": masks,
+        "keypoints": keypoints,
+        "visibility": visibility,
+    }
 
 
 def predict_multiscale(

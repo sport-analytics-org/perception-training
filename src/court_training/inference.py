@@ -34,13 +34,10 @@ def predict(
         flipped_prediction = model(flip_torch(image=scaled_images)["image"])
         assert len(mask_names) == flipped_prediction["masks"].shape[1]
         assert len(keypoint_names) == flipped_prediction["keypoints"].shape[1]
-        flipped_inputs = {
-            name: flipped_prediction[name]
-            for name in ("masks", "keypoints", "visibility")
-            if name in flipped_prediction
-        }
         flipped = flip_torch(
-            **flipped_inputs,
+            masks=flipped_prediction["masks"],
+            keypoints=flipped_prediction["keypoints"],
+            visibility=flipped_prediction["visibility"],
             mask_names=mask_names,
             keypoint_names=keypoint_names,
         )

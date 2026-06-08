@@ -26,7 +26,7 @@ def predict(
     keypoints_by_scale = []
     visibility_by_scale = []
     for scale in scales:
-        scaled_images = _resize_images(images, scale)
+        scaled_images = resize(images, scale)
         prediction = model(scaled_images)
 
         flipped_images = flip_torch(image=scaled_images)["image"]
@@ -43,7 +43,7 @@ def predict(
             keypoint_names=keypoint_names,
         )
 
-        masks_by_scale.append(_resize_masks((prediction["masks"] + flipped["masks"]) / 2, output_size))
+        masks_by_scale.append(resize((prediction["masks"] + flipped["masks"]) / 2, output_size))
         if keypoint_names:
             keypoints_by_scale.extend((prediction["keypoints"], flipped["keypoints"]))
             visibility_by_scale.extend((prediction["visibility"], flipped["visibility"]))
@@ -61,9 +61,7 @@ def predict(
     }
 
 
-def _resize_masks(masks: Float[Tensor, "B N H W"], size: tuple[int, int]) -> Float[Tensor, "B N H W"]:
-    return F.interpolate(masks, size=size, mode="bilinear", align_corners=False)
-
-
-def _resize_images(images: Tensor, scale: float) -> Tensor:
-    return F.interpolate(images, scale_factor=scale, mode="bilinear", align_corners=False)
+def resize(tensor: Float[Tensor, "B C H W"], size: tuple[int, int] | float) -> Float[Tensor, "B C H W"]:
+    if isinstance(size, float):
+        return F.interpolate(tensor, scale_factor=size, mode="bilinear", align_corners=False)
+    return F.interpolate(tensor, size=size, mode="bilinear", align_corners=False)

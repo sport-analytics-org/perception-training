@@ -5,7 +5,7 @@ from jaxtyping import Bool, Float
 from court_training.dataset import Sample
 from court_training.flip import HorizontalFlip
 
-KEYPOINT_LABEL_FIELDS = ["class_labels", "class_sides", "keypoint_visibility"]
+KEYPOINT_LABEL_FIELDS = ["keypoint_visibility"]
 
 
 class CourtAugment:
@@ -32,8 +32,6 @@ class CourtAugment:
         cutout_holes: tuple[int, int] = (1, 4),
         cutout_size: tuple[float, float] = (0.04, 0.18),
     ) -> None:
-        self.keypoint_sides, self.keypoint_labels = split_side_names(keypoint_names)
-        self.keypoint_ids = tuple(zip(self.keypoint_labels, self.keypoint_sides, strict=True))
         self.hflip = HorizontalFlip(mask_names=mask_names, keypoint_names=keypoint_names, p=flip_p)
 
         height, width = image_size
@@ -75,8 +73,6 @@ class CourtAugment:
             image=sample["image"],
             mask=sample["mask"],
             keypoints=keypoints,
-            class_labels=np.array(self.keypoint_labels),
-            class_sides=np.array(self.keypoint_sides),
             keypoint_visibility=sample["keypoint_visibility"],
         )
         flipped = self.hflip(
@@ -93,10 +89,6 @@ class CourtAugment:
         keypoints = pixels_to_normalized(np.asarray(transformed["keypoints"], dtype=np.float32), width, height)
         visibility = np.asarray(transformed["keypoint_visibility"], dtype=np.float32)
         visibility = visibility * points_inside_image(keypoints)
-        sides = tuple(str(side) for side in transformed["class_sides"])
-        labels = tuple(str(label) for label in transformed["class_labels"])
-        ids = tuple(zip(labels, sides, strict=True))
-        keypoints, visibility = order_keypoints(keypoints, visibility, ids, self.keypoint_ids)
         return {
             "image": transformed["image"],
             "mask": transformed["mask"].astype(np.float32),
@@ -107,27 +99,6 @@ class CourtAugment:
 
 def keypoint_params_xy() -> A.KeypointParams:
     return A.KeypointParams(format="xy", label_fields=KEYPOINT_LABEL_FIELDS, remove_invisible=False)
-
-
-def split_side_names(names: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    sides = []
-    labels = []
-    for name in names:
-        side, label = name.split("_", 1)
-        sides.append(side)
-        labels.append(label)
-    return tuple(sides), tuple(labels)
-
-
-def order_keypoints(
-    keypoints: Float[np.ndarray, "K 2"],
-    visibility: Float[np.ndarray, "*K"],
-    ids: tuple[tuple[str, str], ...],
-    output_ids: tuple[tuple[str, str], ...],
-) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarray, "*K"]]:
-    index_by_id = {keypoint_id: index for index, keypoint_id in enumerate(ids)}
-    order = [index_by_id[keypoint_id] for keypoint_id in output_ids]
-    return keypoints[order], visibility[order]
 
 
 def normalized_to_pixels(

@@ -66,8 +66,8 @@ class MaskDataset(Dataset):
         height, width = image_size
         image = image.resize((width, height), Image.Resampling.BILINEAR)
         bitfield = bitfield.resize((width, height), Image.Resampling.NEAREST)
-        image_array = np.array(image, dtype=np.uint8, copy=True)
-        bitfield_array = np.array(bitfield, dtype=np.uint8, copy=True)
+        image_array = np.array(image, dtype=np.uint8)
+        bitfield_array = np.array(bitfield, dtype=np.uint8)
         keypoint_path = self.keypoint_root / mask_path.with_suffix(".json").name
         keypoints, visibility = read_keypoints(keypoint_path)
         return {
@@ -92,12 +92,6 @@ def image_mask_pairs(root: Path) -> list[tuple[Path, Path]]:
 def read_keypoints(path: Path) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarray, "*K"]]:
     data = json.loads(path.read_text())
     points = data["points"]
-    keypoints = np.array([point["position"] for point in points], dtype=np.float32, copy=True)
-    visibility = np.array([point["visible"] for point in points], dtype=np.float32, copy=True)
+    keypoints = np.array([point["position"] for point in points], dtype=np.float32)
+    visibility = np.array([point["visible"] for point in points], dtype=np.float32)
     return keypoints, visibility
-
-
-def image_to_tensor(image: Image.Image) -> Float[Tensor, "3 H W"]:
-    array = np.asarray(image, dtype=np.float32) / 255.0
-    image_tensor = torch.from_numpy(array).permute(2, 0, 1)
-    return (image_tensor - IMAGE_MEAN) / IMAGE_STD

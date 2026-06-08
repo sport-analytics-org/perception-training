@@ -12,8 +12,8 @@ class CourtAugment:
     def __init__(
         self,
         mask_names: tuple[str, ...],
-        image_size: tuple[int, int],
         keypoint_names: tuple[str, ...],
+        image_size: tuple[int, int],
         crop_cutout: bool = True,
         crop_p: float = 0.7,
         cutout_p: float = 0.5,

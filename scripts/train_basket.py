@@ -61,7 +61,12 @@ def main(
         train_root.expanduser().resolve(),
         load_mask=load_mask,
         image_size=image_size,
-        transform=CourtAugment(BASKETBALL_MASK_NAMES, image_size, BASKETBALL_KEYPOINT_NAMES, crop_cutout),
+        transform=CourtAugment(
+            mask_names=BASKETBALL_MASK_NAMES,
+            keypoint_names=BASKETBALL_KEYPOINT_NAMES,
+            image_size=image_size,
+            crop_cutout=crop_cutout,
+        ),
     )
     eval_data = MaskDataset(val_root.expanduser().resolve(), load_mask=load_mask, image_size=image_size)
     train_loader = DataLoader(

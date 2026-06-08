@@ -27,7 +27,7 @@ def predict(
     visibility_by_scale = []
     for scale in scales:
         scaled_images = _resize_images(images, scale)
-        prediction = _predict(model, scaled_images, keypoint_names)
+        prediction = model(scaled_images)
         flipped = _predict_flipped(model, scaled_images, mask_names, keypoint_names)
         masks_by_scale.append(_resize_masks((prediction["masks"] + flipped["masks"]) / 2, output_size))
         if keypoint_names:
@@ -39,19 +39,11 @@ def predict(
     if keypoint_names:
         keypoints = torch.stack(keypoints_by_scale).mean(dim=0)
         visibility = torch.stack(visibility_by_scale).mean(dim=0)
-    return {"masks": torch.stack(masks_by_scale).mean(dim=0), "keypoints": keypoints, "visibility": visibility}
 
-
-def _predict(
-    model: nn.Module,
-    images: Float[Tensor, "B 3 H W"],
-    keypoint_names: tuple[str, ...],
-) -> Prediction:
-    prediction = model(images)
     return {
-        "masks": prediction["masks"],
-        "keypoints": prediction["keypoints"],
-        "visibility": prediction["visibility"],
+        "masks": torch.stack(masks_by_scale).mean(dim=0),
+        "keypoints": keypoints,
+        "visibility": visibility,
     }
 
 
@@ -63,7 +55,7 @@ def _predict_flipped(
 ) -> Prediction:
     flipped_images = flip_torch(image=images)["image"]
     assert isinstance(flipped_images, Tensor)
-    prediction = _predict(model, flipped_images, keypoint_names)
+    prediction = model(flipped_images)
     flipped = flip_torch(
         masks=prediction["masks"],
         keypoints=prediction["keypoints"] if keypoint_names else None,

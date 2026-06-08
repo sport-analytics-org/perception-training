@@ -182,10 +182,9 @@ def evaluate(
         prediction = model.predict(tensors["images"], TTA_SCALES)
 
         visible = tensors["visibility"] > 0.5
-        if visible.any():
-            error = (prediction["keypoints"][visible] - tensors["keypoints"][visible]).norm(dim=-1)
-            total_keypoint_error += error.sum().item()
-            total_visible_keypoints += int(visible.sum().item())
+        error = (prediction["keypoints"][visible] - tensors["keypoints"][visible]).norm(dim=-1)
+        total_keypoint_error += error.sum().item()
+        total_visible_keypoints += int(visible.sum().item())
         total_visibility_correct += int(((prediction["visibility"].sigmoid() > 0.5) == visible).sum().item())
         total_visibility += tensors["visibility"].numel()
 

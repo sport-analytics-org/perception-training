@@ -13,14 +13,14 @@ from torch.utils.data import Dataset
 from court_training.constants import IMAGE_MEAN, IMAGE_STD
 
 
-class Sample(TypedDict):
+class NumpySample(TypedDict):
     image: UInt8[np.ndarray, "H W 3"]
     mask: Float[np.ndarray, "H W N"]
     keypoints: Float[np.ndarray, "K 2"]
     visibility: Float[np.ndarray, "*K"]
 
 
-class TensorSample(TypedDict):
+class TorchSample(TypedDict):
     image: Float[Tensor, "3 H W"]
     mask: Float[Tensor, "N H W"]
     keypoints: Float[Tensor, "K 2"]
@@ -33,7 +33,7 @@ class MaskDataset(Dataset):
         root: Path,
         load_mask: Callable[[np.ndarray], Float[np.ndarray, "H W N"]],
         image_size: tuple[int, int],
-        transform: Callable[[Sample], Sample] | None = None,
+        transform: Callable[[NumpySample], NumpySample] | None = None,
     ) -> None:
         self.load_mask = load_mask
         self.image_size = image_size
@@ -46,7 +46,7 @@ class MaskDataset(Dataset):
     def __len__(self) -> int:
         return len(self.items)
 
-    def __getitem__(self, index: int) -> TensorSample:
+    def __getitem__(self, index: int) -> TorchSample:
         sample = self.load(index, self.image_size)
         if self.transform:
             sample = self.transform(sample)
@@ -59,7 +59,7 @@ class MaskDataset(Dataset):
             "visibility": torch.from_numpy(sample["visibility"]),
         }
 
-    def load(self, index: int, image_size: tuple[int, int]) -> Sample:
+    def load(self, index: int, image_size: tuple[int, int]) -> NumpySample:
         image_path, mask_path = self.items[index]
         image = Image.open(image_path).convert("RGB")
         bitfield = Image.open(mask_path).convert("L")
@@ -101,4 +101,3 @@ def image_to_tensor(image: Image.Image) -> Float[Tensor, "3 H W"]:
     array = np.asarray(image, dtype=np.float32) / 255.0
     image_tensor = torch.from_numpy(array).permute(2, 0, 1)
     return (image_tensor - IMAGE_MEAN) / IMAGE_STD
-

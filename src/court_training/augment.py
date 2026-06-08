@@ -2,7 +2,7 @@ import albumentations as A
 import numpy as np
 from jaxtyping import Bool, Float
 
-from court_training.dataset import Sample
+from court_training.dataset import NumpySample
 from court_training.flip import HorizontalFlip
 
 
@@ -64,7 +64,7 @@ class CourtAugment:
 
         self.geom = A.Compose(transforms, keypoint_params=A.KeypointParams(format="xy", remove_invisible=False))
 
-    def __call__(self, sample: Sample) -> Sample:
+    def __call__(self, sample: NumpySample) -> NumpySample:
         height, width = sample["image"].shape[:2]
         keypoints = normalized_to_pixels(sample["keypoints"], width, height)
         transformed = self.geom(

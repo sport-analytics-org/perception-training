@@ -81,17 +81,14 @@ class CourtAugment:
             keypoints=transformed["keypoints"],
             visibility=transformed["keypoint_visibility"],
         )
-        transformed["image"] = flipped["image"]
-        transformed["mask"] = flipped["masks"]
-        transformed["keypoints"] = flipped["keypoints"]
-        transformed["keypoint_visibility"] = flipped["visibility"]
-
-        keypoints = pixels_to_normalized(np.asarray(transformed["keypoints"], dtype=np.float32), width, height)
-        visibility = np.asarray(transformed["keypoint_visibility"], dtype=np.float32)
+        image = np.asarray(flipped["image"], dtype=np.uint8)
+        mask = np.asarray(flipped["masks"], dtype=np.float32)
+        keypoints = pixels_to_normalized(np.asarray(flipped["keypoints"], dtype=np.float32), width, height)
+        visibility = np.asarray(flipped["visibility"], dtype=np.float32)
         visibility = visibility * points_inside_image(keypoints)
         return {
-            "image": transformed["image"],
-            "mask": transformed["mask"].astype(np.float32),
+            "image": image,
+            "mask": mask,
             "keypoints": keypoints,
             "keypoint_visibility": visibility.astype(np.float32),
         }

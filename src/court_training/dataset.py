@@ -20,6 +20,13 @@ class Sample(TypedDict):
     keypoint_visibility: Float[np.ndarray, "*keypoints"]
 
 
+class TensorSample(TypedDict):
+    image: Float[Tensor, "3 H W"]
+    mask: Float[Tensor, "N H W"]
+    keypoints: Float[Tensor, "keypoints 2"]
+    keypoint_visibility: Float[Tensor, "*keypoints"]
+
+
 class MaskDataset(Dataset):
     def __init__(
         self,
@@ -39,11 +46,11 @@ class MaskDataset(Dataset):
     def __len__(self) -> int:
         return len(self.items)
 
-    def __getitem__(self, index: int) -> Sample:
+    def __getitem__(self, index: int) -> TensorSample:
         sample = self.load(index, self.image_size)
         if self.transform:
             sample = self.transform(sample)
-        return sample
+        return to_tensor(sample)
 
     def load(self, index: int, image_size: tuple[int, int]) -> Sample:
         image_path, mask_path = self.items[index]
@@ -87,3 +94,14 @@ def image_to_tensor(image: Image.Image) -> Float[Tensor, "3 H W"]:
     array = np.asarray(image, dtype=np.float32) / 255.0
     image_tensor = torch.from_numpy(array).permute(2, 0, 1)
     return (image_tensor - IMAGE_MEAN) / IMAGE_STD
+
+
+def to_tensor(sample: Sample) -> TensorSample:
+    image = torch.from_numpy(sample["image"].astype(np.float32) / 255.0).permute(2, 0, 1)
+    image = (image - IMAGE_MEAN) / IMAGE_STD
+    return {
+        "image": image,
+        "mask": torch.from_numpy(sample["mask"]).permute(2, 0, 1),
+        "keypoints": torch.from_numpy(sample["keypoints"]),
+        "keypoint_visibility": torch.from_numpy(sample["keypoint_visibility"]),
+    }

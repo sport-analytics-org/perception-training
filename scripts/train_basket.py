@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from court_training.augment import CourtAugment
-from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
+from court_training.constants import TTA_SCALES
 from court_training.dataset import MaskDataset
 from court_training.model import CourtSegmenter
 
@@ -141,7 +141,7 @@ def train_epoch(
     total_keypoint_loss = 0.0
     total_images = 0
     for batch in tqdm(loader, desc="Training", leave=False):
-        tensors = to_tensor(batch, device)
+        tensors = to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
         mask_logits, predicted_keypoints, visibility_logits, heatmaps = model.forward_with_keypoints(tensors["images"])
         mask_loss = segmentation_loss(mask_logits, tensors["masks"])
@@ -178,7 +178,7 @@ def evaluate(
     total_visibility = 0
 
     for batch in tqdm(loader, desc="Evaluating", leave=False):
-        tensors = to_tensor(batch, device)
+        tensors = to_device(batch, device)
         logits = model.predict_masks(tensors["images"], TTA_SCALES)
 
         predicted_keypoints, visibility_logits = model.predict_keypoints_tta(tensors["images"], TTA_SCALES)
@@ -255,20 +255,15 @@ def load_mask(bitfield: UInt8[np.ndarray, "H W"]) -> Float[np.ndarray, "H W N"]:
     return np.stack(masks, axis=-1).astype(np.float32)
 
 
-def to_tensor(
+def to_device(
     batch: dict[str, Tensor],
     device: torch.device,
 ) -> dict[str, Tensor]:
-    images = batch["image"].to(device=device, dtype=torch.float32).permute(0, 3, 1, 2) / 255.0
-    masks = batch["mask"].to(device=device, dtype=torch.float32).permute(0, 3, 1, 2)
-    keypoints = batch["keypoints"].to(device=device, dtype=torch.float32)
-    visibility = batch["keypoint_visibility"].to(device=device, dtype=torch.float32)
-    images = (images - IMAGE_MEAN.to(device)) / IMAGE_STD.to(device)
     return {
-        "images": images,
-        "masks": masks,
-        "keypoints": keypoints,
-        "visibility": visibility,
+        "images": batch["image"].to(device=device),
+        "masks": batch["mask"].to(device=device),
+        "keypoints": batch["keypoints"].to(device=device),
+        "visibility": batch["keypoint_visibility"].to(device=device),
     }
 
 

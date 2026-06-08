@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 import torch
 from jaxtyping import Float
@@ -10,8 +10,8 @@ from court_training.flip import flip_torch
 
 class Prediction(TypedDict):
     masks: Float[Tensor, "B N H W"]
-    keypoints: Float[Tensor, "B K 2"]
-    visibility: Float[Tensor, "B K"]
+    keypoints: NotRequired[Float[Tensor, "B K 2"]]
+    visibility: NotRequired[Float[Tensor, "B K"]]
 
 
 def predict(
@@ -28,7 +28,21 @@ def predict(
     for scale in scales:
         scaled_images = _resize_images(images, scale)
         prediction = model(scaled_images)
-        flipped = _predict_flipped(model, scaled_images, mask_names, keypoint_names)
+
+        flipped_images = flip_torch(image=scaled_images)["image"]
+        assert isinstance(flipped_images, Tensor)
+        flipped_prediction = model(flipped_images)
+        flipped_inputs = {
+            name: flipped_prediction[name]
+            for name in ("masks", "keypoints", "visibility")
+            if name in flipped_prediction
+        }
+        flipped = flip_torch(
+            **flipped_inputs,
+            mask_names=mask_names,
+            keypoint_names=keypoint_names,
+        )
+
         masks_by_scale.append(_resize_masks((prediction["masks"] + flipped["masks"]) / 2, output_size))
         if keypoint_names:
             keypoints_by_scale.extend((prediction["keypoints"], flipped["keypoints"]))
@@ -45,38 +59,6 @@ def predict(
         "keypoints": keypoints,
         "visibility": visibility,
     }
-
-
-def _predict_flipped(
-    model: nn.Module,
-    images: Float[Tensor, "B 3 H W"],
-    mask_names: tuple[str, ...],
-    keypoint_names: tuple[str, ...],
-) -> Prediction:
-    flipped_images = flip_torch(image=images)["image"]
-    assert isinstance(flipped_images, Tensor)
-    prediction = model(flipped_images)
-    flipped = flip_torch(
-        masks=prediction["masks"],
-        keypoints=prediction["keypoints"] if keypoint_names else None,
-        visibility=prediction["visibility"] if keypoint_names else None,
-        mask_names=mask_names,
-        keypoint_names=keypoint_names,
-    )
-    masks = flipped["masks"]
-    assert isinstance(masks, Tensor)
-    if not keypoint_names:
-        return {
-            "masks": masks,
-            "keypoints": torch.empty(images.shape[0], 0, 2, device=images.device, dtype=images.dtype),
-            "visibility": torch.empty(images.shape[0], 0, device=images.device, dtype=images.dtype),
-        }
-
-    flipped_keypoints = flipped["keypoints"]
-    flipped_visibility = flipped["visibility"]
-    assert isinstance(flipped_keypoints, Tensor)
-    assert isinstance(flipped_visibility, Tensor)
-    return {"masks": masks, "keypoints": flipped_keypoints, "visibility": flipped_visibility}
 
 
 def _resize_masks(masks: Float[Tensor, "B N H W"], size: tuple[int, int]) -> Float[Tensor, "B N H W"]:

@@ -1,3 +1,5 @@
+from typing import NotRequired
+
 import timm
 import torch
 from jaxtyping import Float
@@ -8,7 +10,7 @@ from court_training import inference
 
 
 class ModelOutput(inference.Prediction):
-    heatmaps: Float[Tensor, "B K Hf Wf"]
+    heatmaps: NotRequired[Float[Tensor, "B K Hf Wf"]]
 
 
 class CourtSegmenter(nn.Module):
@@ -54,12 +56,7 @@ class CourtSegmenter(nn.Module):
         keypoint_heatmaps = self.keypoint_heatmaps
         keypoint_objectness = self.keypoint_objectness
         if keypoint_heatmaps is None or keypoint_objectness is None:
-            return {
-                "masks": masks,
-                "keypoints": empty_keypoints(images),
-                "visibility": empty_visibility(images),
-                "heatmaps": empty_heatmaps(images),
-            }
+            return {"masks": masks}
 
         keypoints, visibility, heatmaps = self.decode_keypoints(features, keypoint_heatmaps, keypoint_objectness)
         return {"masks": masks, "keypoints": keypoints, "visibility": visibility, "heatmaps": heatmaps}
@@ -110,18 +107,6 @@ class CourtSegmenter(nn.Module):
     @property
     def device(self) -> torch.device:
         return next(self.parameters()).device
-
-
-def empty_keypoints(images: Tensor) -> Float[Tensor, "B K 2"]:
-    return torch.empty(images.shape[0], 0, 2, device=images.device, dtype=images.dtype)
-
-
-def empty_visibility(images: Tensor) -> Float[Tensor, "B K"]:
-    return torch.empty(images.shape[0], 0, device=images.device, dtype=images.dtype)
-
-
-def empty_heatmaps(images: Tensor) -> Float[Tensor, "B K Hf Wf"]:
-    return torch.empty(images.shape[0], 0, 0, 0, device=images.device, dtype=images.dtype)
 
 
 def softargmax_2d(heatmaps: Float[Tensor, "B K H W"], temperature: float = 4.0) -> Float[Tensor, "B K 2"]:

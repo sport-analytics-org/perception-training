@@ -29,26 +29,30 @@ def predict(
         scaled_images = resize(images, scale)
         prediction = model(scaled_images)
         assert len(mask_names) == prediction["masks"].shape[1]
-        assert len(keypoint_names) == prediction["keypoints"].shape[1]
+        if "keypoints" in prediction:
+            assert len(keypoint_names) == prediction["keypoints"].shape[1]
+        else:
+            assert not keypoint_names
 
         flipped_prediction = model(flip_torch(image=scaled_images)["image"])
         flipped = flip_torch(
             masks=flipped_prediction["masks"],
-            keypoints=flipped_prediction["keypoints"],
-            visibility=flipped_prediction["visibility"],
+            keypoints=flipped_prediction.get("keypoints"),
+            visibility=flipped_prediction.get("visibility"),
             mask_names=mask_names,
             keypoint_names=keypoint_names,
         )
 
         masks_by_scale.append(resize((prediction["masks"] + flipped["masks"]) / 2, output_size))
-        keypoints_by_scale.append((prediction["keypoints"] + flipped["keypoints"]) / 2)
-        visibility_by_scale.append((prediction["visibility"] + flipped["visibility"]) / 2)
+        if "keypoints" in prediction:
+            keypoints_by_scale.append((prediction["keypoints"] + flipped["keypoints"]) / 2)
+            visibility_by_scale.append((prediction["visibility"] + flipped["visibility"]) / 2)
 
-    return {
-        "masks": torch.stack(masks_by_scale).mean(dim=0),
-        "keypoints": torch.stack(keypoints_by_scale).mean(dim=0),
-        "visibility": torch.stack(visibility_by_scale).mean(dim=0),
-    }
+    output: Prediction = {"masks": torch.stack(masks_by_scale).mean(dim=0)}
+    if keypoints_by_scale:
+        output["keypoints"] = torch.stack(keypoints_by_scale).mean(dim=0)
+        output["visibility"] = torch.stack(visibility_by_scale).mean(dim=0)
+    return output
 
 
 def resize(tensor: Float[Tensor, "B C H W"], size: tuple[int, int] | float) -> Float[Tensor, "B C H W"]:

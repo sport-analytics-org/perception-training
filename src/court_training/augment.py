@@ -5,8 +5,6 @@ from jaxtyping import Bool, Float
 from court_training.dataset import Sample
 from court_training.flip import HorizontalFlip
 
-KEYPOINT_LABEL_FIELDS = ["visibility"]
-
 
 class CourtAugment:
     def __init__(
@@ -64,7 +62,7 @@ class CourtAugment:
             transforms.insert(0, crop)
             transforms.append(cutout)
 
-        self.geom = A.Compose(transforms, keypoint_params=keypoint_params_xy())
+        self.geom = A.Compose(transforms, keypoint_params=A.KeypointParams(format="xy", remove_invisible=False))
 
     def __call__(self, sample: Sample) -> Sample:
         height, width = sample["image"].shape[:2]
@@ -73,13 +71,12 @@ class CourtAugment:
             image=sample["image"],
             mask=sample["mask"],
             keypoints=keypoints,
-            visibility=sample["visibility"],
         )
         flipped = self.hflip(
             image=transformed["image"],
             masks=transformed["mask"],
             keypoints=transformed["keypoints"],
-            visibility=transformed["visibility"],
+            visibility=sample["visibility"],
         )
         keypoints = pixels_to_normalized(flipped["keypoints"], width, height)
         visibility = flipped["visibility"] * points_inside_image(keypoints)
@@ -89,10 +86,6 @@ class CourtAugment:
             "keypoints": keypoints,
             "visibility": visibility,
         }
-
-
-def keypoint_params_xy() -> A.KeypointParams:
-    return A.KeypointParams(format="xy", label_fields=KEYPOINT_LABEL_FIELDS, remove_invisible=False)
 
 
 def normalized_to_pixels(

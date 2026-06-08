@@ -49,22 +49,26 @@ class HorizontalFlip:
 
 
 def flip_numpy(
-    image: Float[np.ndarray, "... H W 3"],
-    masks: Float[np.ndarray, "... H W N"],
-    keypoints: Float[np.ndarray, "... K 2"],
-    visibility: Float[np.ndarray, "... K"],
+    image: Float[np.ndarray, "... H W 3"] | None = None,
+    masks: Float[np.ndarray, "... H W N"] | None = None,
+    keypoints: Float[np.ndarray, "... K 2"] | None = None,
+    visibility: Float[np.ndarray, "... K"] | None = None,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
 ) -> dict[str, np.ndarray]:
-    keypoints = keypoints.copy()
-    keypoints[..., 0] = 1 - keypoints[..., 0]
-    masks = np.flip(masks, axis=-2)
-    return {
-        "image": np.flip(image, axis=-2).copy(),
-        "masks": np.take(masks, flip_indices(mask_names), axis=-1).copy(),
-        "keypoints": np.take(keypoints, flip_indices(keypoint_names), axis=-2),
-        "visibility": np.take(visibility, flip_indices(keypoint_names), axis=-1),
-    }
+    output = {}
+    if image is not None:
+        output["image"] = np.flip(image, axis=-2).copy()
+    if masks is not None:
+        masks = np.flip(masks, axis=-2)
+        output["masks"] = np.take(masks, flip_indices(mask_names), axis=-1).copy()
+    if keypoints is not None:
+        keypoints = keypoints.copy()
+        keypoints[..., 0] = 1 - keypoints[..., 0]
+        output["keypoints"] = np.take(keypoints, flip_indices(keypoint_names), axis=-2)
+    if visibility is not None:
+        output["visibility"] = np.take(visibility, flip_indices(keypoint_names), axis=-1)
+    return output
 
 
 def flip_torch(

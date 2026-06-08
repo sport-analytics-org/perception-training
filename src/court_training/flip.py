@@ -53,11 +53,11 @@ def flip(
     if image is not None:
         output["image"] = flip_array(image)
     if masks is not None:
-        output["masks"] = swap_left_right(flip_array(masks), mask_names, channel_axis(masks))
+        output["masks"] = reorder(flip_array(masks), flip_indices(mask_names), axis=-1)
     if keypoints is not None:
-        output["keypoints"] = swap_left_right(flip_keypoints(keypoints, image), keypoint_names, -2)
+        output["keypoints"] = reorder(flip_keypoints(keypoints, image), flip_indices(keypoint_names), axis=-2)
     if visibility is not None:
-        output["visibility"] = swap_left_right(visibility, keypoint_names, -1)
+        output["visibility"] = reorder(visibility, flip_indices(keypoint_names), axis=-1)
     return output
 
 
@@ -79,31 +79,18 @@ def flip_keypoints(
     return flipped
 
 
-def swap_left_right(array: np.ndarray, names: tuple[str, ...], axis: int) -> np.ndarray:
-    swapped = array.copy()
-    for left, right in left_right_pairs(names):
-        left_index = channel_index(array.ndim, axis, left)
-        right_index = channel_index(array.ndim, axis, right)
-        swapped[left_index] = array[right_index]
-        swapped[right_index] = array[left_index]
-    return swapped
+def reorder(array: np.ndarray, indices: tuple[int, ...], axis: int) -> np.ndarray:
+    return np.take(array, indices, axis=axis)
 
 
-def channel_axis(array: np.ndarray) -> int:
-    return -1
+def flip_indices(labels: tuple[str, ...]) -> tuple[int, ...]:
+    index_by_label = {label: index for index, label in enumerate(labels)}
+    return tuple(index_by_label[flipped_label(label)] for label in labels)
 
 
-def channel_index(ndim: int, axis: int, index: int) -> tuple[slice | int, ...]:
-    selectors: list[slice | int] = [slice(None)] * ndim
-    selectors[axis] = index
-    return tuple(selectors)
-
-
-def left_right_pairs(names: tuple[str, ...]) -> tuple[tuple[int, int], ...]:
-    index_by_name = {name: index for index, name in enumerate(names)}
-    pairs = []
-    for name, index in index_by_name.items():
-        if name.startswith("left_"):
-            right_name = "right_" + name.removeprefix("left_")
-            pairs.append((index, index_by_name[right_name]))
-    return tuple(pairs)
+def flipped_label(label: str) -> str:
+    if label.startswith("left_"):
+        return "right_" + label.removeprefix("left_")
+    if label.startswith("right_"):
+        return "left_" + label.removeprefix("right_")
+    return label

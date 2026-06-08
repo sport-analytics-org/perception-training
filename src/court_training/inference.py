@@ -1,10 +1,9 @@
-import numpy as np
 import torch
 from jaxtyping import Float
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from court_training.flip import flip
+from court_training.flip import flip_torch
 
 
 def predict_masks(
@@ -47,15 +46,12 @@ def predict_flipped(
     images: Float[Tensor, "B 3 H W"],
     mask_names: tuple[str, ...],
 ) -> Float[Tensor, "B N H W"]:
-    images_numpy = images.detach().cpu().permute(0, 2, 3, 1).numpy()
-    flipped_images = flip(image=images_numpy)["image"]
-    assert isinstance(flipped_images, np.ndarray)
-    flipped_images = numpy_images_to_tensor(flipped_images, images)
+    flipped_images = flip_torch(image=images)["image"]
+    assert isinstance(flipped_images, Tensor)
     flipped_logits = model(flipped_images)
-    logits_numpy = flipped_logits.detach().cpu().permute(0, 2, 3, 1).numpy()
-    logits_numpy = flip(masks=logits_numpy, mask_names=mask_names)["masks"]
-    assert isinstance(logits_numpy, np.ndarray)
-    return numpy_masks_to_tensor(logits_numpy, flipped_logits)
+    logits = flip_torch(masks=flipped_logits, mask_names=mask_names)["masks"]
+    assert isinstance(logits, Tensor)
+    return logits
 
 
 def predict_flipped_keypoints(
@@ -63,45 +59,21 @@ def predict_flipped_keypoints(
     images: Float[Tensor, "B 3 H W"],
     keypoint_names: tuple[str, ...],
 ) -> tuple[Float[Tensor, "B K 2"], Float[Tensor, "B K"]]:
-    images_numpy = images.detach().cpu().permute(0, 2, 3, 1).numpy()
-    flipped_images = flip(image=images_numpy)["image"]
-    assert isinstance(flipped_images, np.ndarray)
-    flipped_images = numpy_images_to_tensor(flipped_images, images)
+    flipped_images = flip_torch(image=images)["image"]
+    assert isinstance(flipped_images, Tensor)
     keypoints, visibility = model.predict_keypoints(flipped_images)
-    keypoints_numpy = keypoints.detach().cpu().numpy()
-    visibility_numpy = visibility.detach().cpu().numpy()
-    flipped = flip(
-        keypoints=keypoints_numpy,
-        visibility=visibility_numpy,
+    flipped = flip_torch(
+        keypoints=keypoints,
+        visibility=visibility,
         x_max=1,
         keypoint_names=keypoint_names,
     )
     flipped_keypoints = flipped["keypoints"]
     flipped_visibility = flipped["visibility"]
-    assert isinstance(flipped_keypoints, np.ndarray)
-    assert isinstance(flipped_visibility, np.ndarray)
-    keypoints = numpy_keypoints_to_tensor(flipped_keypoints, keypoints)
-    visibility = numpy_visibility_to_tensor(flipped_visibility, visibility)
-    return keypoints, visibility
+    assert isinstance(flipped_keypoints, Tensor)
+    assert isinstance(flipped_visibility, Tensor)
+    return flipped_keypoints, flipped_visibility
 
 
 def resize_images(images: Tensor, scale: float) -> Tensor:
     return F.interpolate(images, scale_factor=scale, mode="bilinear", align_corners=False)
-
-
-def numpy_images_to_tensor(images: np.ndarray, like: Tensor) -> Tensor:
-    tensor = torch.from_numpy(images.copy()).permute(0, 3, 1, 2)
-    return tensor.to(device=like.device, dtype=like.dtype)
-
-
-def numpy_masks_to_tensor(masks: np.ndarray, like: Tensor) -> Tensor:
-    tensor = torch.from_numpy(masks.copy()).permute(0, 3, 1, 2)
-    return tensor.to(device=like.device, dtype=like.dtype)
-
-
-def numpy_keypoints_to_tensor(keypoints: np.ndarray, like: Tensor) -> Tensor:
-    return torch.from_numpy(keypoints.copy()).to(device=like.device, dtype=like.dtype)
-
-
-def numpy_visibility_to_tensor(visibility: np.ndarray, like: Tensor) -> Tensor:
-    return torch.from_numpy(visibility.copy()).to(device=like.device, dtype=like.dtype)

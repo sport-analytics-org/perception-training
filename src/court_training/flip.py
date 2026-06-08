@@ -1,5 +1,7 @@
 import numpy as np
+import torch
 from jaxtyping import Float
+from torch import Tensor
 
 
 class HorizontalFlip:
@@ -29,7 +31,7 @@ class HorizontalFlip:
                 "applied": False,
             }
 
-        flipped = flip(
+        flipped = flip_numpy(
             image=image,
             masks=masks,
             keypoints=keypoints,
@@ -42,7 +44,7 @@ class HorizontalFlip:
         return flipped
 
 
-def flip(
+def flip_numpy(
     image: Float[np.ndarray, "... H W 3"] | None = None,
     masks: Float[np.ndarray, "... H W N"] | None = None,
     keypoints: Float[np.ndarray, "... K 2"] | None = None,
@@ -65,6 +67,36 @@ def flip(
     if visibility is not None:
         output["visibility"] = np.take(visibility, flip_indices(keypoint_names), axis=-1)
     return output
+
+
+def flip_torch(
+    image: Float[Tensor, "... 3 H W"] | None = None,
+    masks: Float[Tensor, "... N H W"] | None = None,
+    keypoints: Float[Tensor, "... K 2"] | None = None,
+    visibility: Float[Tensor, "... K"] | None = None,
+    x_max: float | None = None,
+    mask_names: tuple[str, ...] = (),
+    keypoint_names: tuple[str, ...] = (),
+) -> dict[str, object]:
+    output = {}
+    if image is not None:
+        output["image"] = torch.flip(image, dims=(-1,))
+    if masks is not None:
+        masks = torch.flip(masks, dims=(-1,))
+        output["masks"] = take_torch(masks, flip_indices(mask_names), dim=-3)
+    if keypoints is not None:
+        assert x_max is not None
+        keypoints = keypoints.clone()
+        keypoints[..., 0] = x_max - keypoints[..., 0]
+        output["keypoints"] = take_torch(keypoints, flip_indices(keypoint_names), dim=-2)
+    if visibility is not None:
+        output["visibility"] = take_torch(visibility, flip_indices(keypoint_names), dim=-1)
+    return output
+
+
+def take_torch(tensor: Tensor, indices: tuple[int, ...], dim: int) -> Tensor:
+    index = torch.tensor(indices, device=tensor.device)
+    return torch.index_select(tensor, dim=dim % tensor.ndim, index=index)
 
 
 def flip_indices(labels: tuple[str, ...]) -> tuple[int, ...]:

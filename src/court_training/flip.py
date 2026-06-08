@@ -1,24 +1,7 @@
-from typing import NotRequired, TypedDict
-
 import numpy as np
 import torch
 from jaxtyping import Float
 from torch import Tensor
-
-
-class NumpyFlip(TypedDict):
-    image: Float[np.ndarray, "... H W 3"]
-    masks: Float[np.ndarray, "... H W N"]
-    keypoints: Float[np.ndarray, "... K 2"]
-    visibility: Float[np.ndarray, "... K"]
-    applied: NotRequired[bool]
-
-
-class TorchFlip(TypedDict):
-    image: NotRequired[Float[Tensor, "... 3 H W"] | None]
-    masks: NotRequired[Float[Tensor, "... N H W"] | None]
-    keypoints: NotRequired[Float[Tensor, "... K 2"] | None]
-    visibility: NotRequired[Float[Tensor, "... K"] | None]
 
 
 class HorizontalFlip:
@@ -38,14 +21,13 @@ class HorizontalFlip:
         masks: Float[np.ndarray, "... H W N"],
         keypoints: Float[np.ndarray, "... K 2"],
         visibility: Float[np.ndarray, "... K"],
-    ) -> NumpyFlip:
+    ) -> dict[str, np.ndarray]:
         if np.random.random() >= self.p:
             return {
                 "image": image,
                 "masks": masks,
                 "keypoints": keypoints,
                 "visibility": visibility,
-                "applied": False,
             }
 
         flipped = flip_numpy(
@@ -57,7 +39,6 @@ class HorizontalFlip:
             mask_names=self.mask_names,
             keypoint_names=self.keypoint_names,
         )
-        flipped["applied"] = True
         return flipped
 
 
@@ -69,7 +50,7 @@ def flip_numpy(
     x_max: float,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
-) -> NumpyFlip:
+) -> dict[str, np.ndarray]:
     keypoints = keypoints.copy()
     keypoints[..., 0] = x_max - keypoints[..., 0]
     masks = np.flip(masks, axis=-2)
@@ -89,8 +70,8 @@ def flip_torch(
     x_max: float | None = None,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
-) -> TorchFlip:
-    output: TorchFlip = {}
+) -> dict[str, Tensor]:
+    output = {}
     if image is not None:
         output["image"] = torch.flip(image, dims=(-1,))
     if masks is not None:

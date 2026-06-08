@@ -148,19 +148,19 @@ def train_epoch(
     for batch in tqdm(loader, desc="Training", leave=False):
         tensors = to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
-        prediction = model(tensors["images"])
-        mask_loss = segmentation_loss(prediction["masks"], tensors["masks"])
+        prediction = model(tensors["image"])
+        mask_loss = segmentation_loss(prediction["masks"], tensors["mask"])
         point_loss = keypoint_loss(
             prediction["keypoints"],
             prediction["visibility"],
             prediction["heatmaps"],
             tensors["keypoints"],
-            tensors["visibility"],
+            tensors["keypoint_visibility"],
         )
         loss = mask_loss + keypoint_loss_weight * point_loss
         loss.backward()
         optimizer.step()
-        batch_size = tensors["images"].shape[0]
+        batch_size = tensors["image"].shape[0]
         total_segmentation_loss += mask_loss.item() * batch_size
         total_keypoint_loss += point_loss.item() * batch_size
         total_images += batch_size
@@ -184,17 +184,17 @@ def evaluate(
 
     for batch in tqdm(loader, desc="Evaluating", leave=False):
         tensors = to_device(batch, device)
-        prediction = model.predict(tensors["images"], TTA_SCALES)
+        prediction = model.predict(tensors["image"], TTA_SCALES)
 
-        visible = tensors["visibility"] > 0.5
+        visible = tensors["keypoint_visibility"] > 0.5
         error = (prediction["keypoints"][visible] - tensors["keypoints"][visible]).norm(dim=-1)
         total_keypoint_error += error.sum().item()
         total_visible_keypoints += int(visible.sum().item())
         total_visibility_correct += int(((prediction["visibility"].sigmoid() > 0.5) == visible).sum().item())
-        total_visibility += tensors["visibility"].numel()
+        total_visibility += tensors["keypoint_visibility"].numel()
 
         predictions = prediction["masks"].sigmoid() > 0.5
-        targets = tensors["masks"] > 0.5
+        targets = tensors["mask"] > 0.5
         intersection += (predictions & targets).sum(dim=(0, 2, 3))
         union += (predictions | targets).sum(dim=(0, 2, 3))
 
@@ -262,13 +262,7 @@ def to_device(
     batch: dict[str, Tensor],
     device: torch.device,
 ) -> dict[str, Tensor]:
-    names = {
-        "image": "images",
-        "mask": "masks",
-        "keypoints": "keypoints",
-        "keypoint_visibility": "visibility",
-    }
-    return {output: batch[input_].to(device=device) for input_, output in names.items()}
+    return {key: value.to(device=device) for key, value in batch.items()}
 
 
 def set_seed(seed: int) -> None:

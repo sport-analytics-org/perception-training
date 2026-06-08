@@ -29,9 +29,7 @@ def predict(
         scaled_images = resize(images, scale)
         prediction = model(scaled_images)
 
-        flipped_images = flip_torch(image=scaled_images)["image"]
-        assert isinstance(flipped_images, Tensor)
-        flipped_prediction = model(flipped_images)
+        flipped_prediction = model(flip_torch(image=scaled_images)["image"])
         flipped_inputs = {
             name: flipped_prediction[name]
             for name in ("masks", "keypoints", "visibility")

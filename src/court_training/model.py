@@ -62,14 +62,6 @@ class CourtSegmenter(nn.Module):
         keypoints, visibility_logits, heatmaps = self.decode_keypoints(features)
         return mask_logits, keypoints, visibility_logits, heatmaps
 
-    def predict_keypoints(
-        self,
-        images: Float[Tensor, "B 3 H W"],
-    ) -> tuple[Float[Tensor, "B K 2"], Float[Tensor, "B K"]]:
-        features = self.encode(images)
-        keypoints, visibility_logits, _ = self.decode_keypoints(features)
-        return keypoints, visibility_logits
-
     def decode_keypoints(
         self,
         features: Float[Tensor, "B C Hf Wf"],

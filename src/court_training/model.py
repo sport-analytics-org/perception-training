@@ -107,6 +107,13 @@ class CourtSegmenter(nn.Module):
     @torch.no_grad()
     def predict(self, image: Image.Image, scales: tuple[float, ...]) -> Float[Tensor, "N H W"]:
         images = image_to_tensor(image.convert("RGB")).unsqueeze(0).to(self.device)
+        return self.predict_masks(images, scales).squeeze(0)
+
+    def predict_masks(
+        self,
+        images: Float[Tensor, "B 3 H W"],
+        scales: tuple[float, ...],
+    ) -> Float[Tensor, "B N H W"]:
         output_size = images.shape[-2:]
         logits_by_scale = []
         for scale in scales:
@@ -114,7 +121,7 @@ class CourtSegmenter(nn.Module):
             logits = self(scaled_images)
             logits = (logits + self.predict_flipped(scaled_images)) / 2
             logits_by_scale.append(F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False))
-        return torch.stack(logits_by_scale).mean(dim=0).squeeze(0)
+        return torch.stack(logits_by_scale).mean(dim=0)
 
     def predict_flipped(self, images: Float[Tensor, "B 3 H W"]) -> Float[Tensor, "B N H W"]:
         images_numpy = images.detach().cpu().permute(0, 2, 3, 1).numpy()

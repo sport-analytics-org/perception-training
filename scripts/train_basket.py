@@ -16,7 +16,7 @@ from tqdm import tqdm
 from court_training.augment import CourtAugment
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
 from court_training.dataset import MaskDataset
-from court_training.model import CourtSegmenter, resize_images
+from court_training.model import CourtSegmenter
 
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
 
@@ -178,7 +178,7 @@ def evaluate(
 
     for batch in tqdm(loader, desc="Evaluating", leave=False):
         tensors = to_tensor(batch, device)
-        logits = predict_multiscale(model, tensors["images"], TTA_SCALES)
+        logits = model.predict_masks(tensors["images"], TTA_SCALES)
 
         predicted_keypoints, visibility_logits = model.predict_keypoints(tensors["images"])
         visible = tensors["visibility"] > 0.5
@@ -269,22 +269,6 @@ def to_tensor(
         "keypoints": keypoints,
         "visibility": visibility,
     }
-
-
-def predict_multiscale(
-    model: CourtSegmenter,
-    images: Float[Tensor, "B 3 H W"],
-    scales: tuple[float, ...],
-) -> Float[Tensor, "B N H W"]:
-    output_size = images.shape[-2:]
-    logits_by_scale = []
-    for scale in scales:
-        scaled_images = resize_images(images, scale)
-        logits = model(scaled_images)
-        logits = (logits + model.predict_flipped(scaled_images)) / 2
-        resized_logits = F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False)
-        logits_by_scale.append(resized_logits)
-    return torch.stack(logits_by_scale).mean(dim=0)
 
 
 def set_seed(seed: int) -> None:

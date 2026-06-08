@@ -3,6 +3,8 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
+from court_training.dataset import NumpySample
+
 
 class HorizontalFlip:
     def __init__(
@@ -17,28 +19,33 @@ class HorizontalFlip:
 
     def __call__(
         self,
-        image: Float[np.ndarray, "... H W 3"],
-        masks: Float[np.ndarray, "... H W N"],
-        keypoints: Float[np.ndarray, "... K 2"],
-        visibility: Float[np.ndarray, "... K"],
-    ) -> dict[str, np.ndarray]:
+        image: Float[np.ndarray, "H W 3"],
+        mask: Float[np.ndarray, "H W N"],
+        keypoints: Float[np.ndarray, "K 2"],
+        visibility: Float[np.ndarray, "*K"],
+    ) -> NumpySample:
         if np.random.random() >= self.p:
             return {
                 "image": image,
-                "masks": masks,
+                "mask": mask,
                 "keypoints": keypoints,
                 "visibility": visibility,
             }
 
         flipped = flip_numpy(
             image=image,
-            masks=masks,
+            masks=mask,
             keypoints=keypoints,
             visibility=visibility,
             mask_names=self.mask_names,
             keypoint_names=self.keypoint_names,
         )
-        return flipped
+        return {
+            "image": flipped["image"],
+            "mask": flipped["masks"],
+            "keypoints": flipped["keypoints"],
+            "visibility": flipped["visibility"],
+        }
 
 
 def flip_numpy(

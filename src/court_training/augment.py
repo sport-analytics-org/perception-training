@@ -76,16 +76,11 @@ class CourtAugment:
         visibility = sample["visibility"] * points_inside_image(keypoints)
         flipped = self.hflip(
             image=transformed["image"],
-            masks=transformed["mask"],
+            mask=transformed["mask"],
             keypoints=keypoints,
             visibility=visibility,
         )
-        return {
-            "image": flipped["image"],
-            "mask": flipped["masks"],
-            "keypoints": flipped["keypoints"],
-            "visibility": flipped["visibility"],
-        }
+        return flipped
 
 
 def normalized_to_pixels(

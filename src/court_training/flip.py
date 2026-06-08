@@ -84,19 +84,14 @@ def flip_torch(
         output["image"] = torch.flip(image, dims=(-1,))
     if masks is not None:
         masks = torch.flip(masks, dims=(-1,))
-        output["masks"] = take_torch(masks, flip_indices(mask_names), dim=-3)
+        output["masks"] = masks[..., flip_indices(mask_names), :, :]
     if keypoints is not None:
         keypoints = keypoints.clone()
         keypoints[..., 0] = 1 - keypoints[..., 0]
-        output["keypoints"] = take_torch(keypoints, flip_indices(keypoint_names), dim=-2)
+        output["keypoints"] = keypoints[..., flip_indices(keypoint_names), :]
     if visibility is not None:
-        output["visibility"] = take_torch(visibility, flip_indices(keypoint_names), dim=-1)
+        output["visibility"] = visibility[..., flip_indices(keypoint_names)]
     return output
-
-
-def take_torch(tensor: Tensor, indices: tuple[int, ...], dim: int) -> Tensor:
-    index = torch.tensor(indices, device=tensor.device, dtype=torch.long)
-    return torch.index_select(tensor, dim=dim % tensor.ndim, index=index)
 
 
 def flip_indices(labels: tuple[str, ...]) -> tuple[int, ...]:

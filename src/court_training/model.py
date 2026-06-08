@@ -7,6 +7,10 @@ from torch.nn import functional as F
 from court_training import inference
 
 
+class ModelOutput(inference.Prediction):
+    heatmaps: Float[Tensor, "B K Hf Wf"]
+
+
 class CourtSegmenter(nn.Module):
     def __init__(
         self,
@@ -44,23 +48,19 @@ class CourtSegmenter(nn.Module):
                 nn.Conv2d(256, num_keypoints, kernel_size=1),
             )
 
-    def forward(self, images: Float[Tensor, "B 3 H W"]) -> Float[Tensor, "B N H W"]:
+    def forward(self, images: Float[Tensor, "B 3 H W"]) -> ModelOutput:
         features = self.encode(images)
-        return self.decode_masks(features, images.shape[-2:])
+        masks = self.decode_masks(features, images.shape[-2:])
+        if self.keypoint_heatmaps is None:
+            return {
+                "masks": masks,
+                "keypoints": empty_keypoints(images),
+                "visibility": empty_visibility(images),
+                "heatmaps": empty_heatmaps(images),
+            }
 
-    def forward_with_keypoints(
-        self,
-        images: Float[Tensor, "B 3 H W"],
-    ) -> tuple[
-        Float[Tensor, "B N H W"],
-        Float[Tensor, "B K 2"],
-        Float[Tensor, "B K"],
-        Float[Tensor, "B K Hf Wf"],
-    ]:
-        features = self.encode(images)
-        mask_logits = self.decode_masks(features, images.shape[-2:])
-        keypoints, visibility_logits, heatmaps = self.decode_keypoints(features)
-        return mask_logits, keypoints, visibility_logits, heatmaps
+        keypoints, visibility, heatmaps = self.decode_keypoints(features)
+        return {"masks": masks, "keypoints": keypoints, "visibility": visibility, "heatmaps": heatmaps}
 
     def decode_keypoints(
         self,
@@ -108,6 +108,18 @@ class CourtSegmenter(nn.Module):
     @property
     def device(self) -> torch.device:
         return next(self.parameters()).device
+
+
+def empty_keypoints(images: Tensor) -> Float[Tensor, "B K 2"]:
+    return torch.empty(images.shape[0], 0, 2, device=images.device, dtype=images.dtype)
+
+
+def empty_visibility(images: Tensor) -> Float[Tensor, "B K"]:
+    return torch.empty(images.shape[0], 0, device=images.device, dtype=images.dtype)
+
+
+def empty_heatmaps(images: Tensor) -> Float[Tensor, "B K Hf Wf"]:
+    return torch.empty(images.shape[0], 0, 0, 0, device=images.device, dtype=images.dtype)
 
 
 def softargmax_2d(heatmaps: Float[Tensor, "B K H W"], temperature: float = 4.0) -> Float[Tensor, "B K 2"]:

@@ -47,14 +47,12 @@ def _predict(
     images: Float[Tensor, "B 3 H W"],
     keypoint_names: tuple[str, ...],
 ) -> Prediction:
-    if not keypoint_names:
-        return {
-            "masks": model(images),
-            "keypoints": torch.empty(images.shape[0], 0, 2, device=images.device, dtype=images.dtype),
-            "visibility": torch.empty(images.shape[0], 0, device=images.device, dtype=images.dtype),
-        }
-    masks, keypoints, visibility, _ = model.forward_with_keypoints(images)
-    return {"masks": masks, "keypoints": keypoints, "visibility": visibility}
+    prediction = model(images)
+    return {
+        "masks": prediction["masks"],
+        "keypoints": prediction["keypoints"],
+        "visibility": prediction["visibility"],
+    }
 
 
 def _predict_flipped(

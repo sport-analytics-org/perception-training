@@ -143,12 +143,12 @@ def train_epoch(
     for batch in tqdm(loader, desc="Training", leave=False):
         tensors = to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
-        mask_logits, predicted_keypoints, visibility_logits, heatmaps = model.forward_with_keypoints(tensors["images"])
-        mask_loss = segmentation_loss(mask_logits, tensors["masks"])
+        prediction = model(tensors["images"])
+        mask_loss = segmentation_loss(prediction["masks"], tensors["masks"])
         point_loss = keypoint_loss(
-            predicted_keypoints,
-            visibility_logits,
-            heatmaps,
+            prediction["keypoints"],
+            prediction["visibility"],
+            prediction["heatmaps"],
             tensors["keypoints"],
             tensors["visibility"],
         )

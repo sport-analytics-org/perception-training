@@ -51,7 +51,9 @@ class CourtSegmenter(nn.Module):
     def forward(self, images: Float[Tensor, "B 3 H W"]) -> ModelOutput:
         features = self.encode(images)
         masks = self.decode_masks(features, images.shape[-2:])
-        if self.keypoint_heatmaps is None:
+        keypoint_heatmaps = self.keypoint_heatmaps
+        keypoint_objectness = self.keypoint_objectness
+        if keypoint_heatmaps is None or keypoint_objectness is None:
             return {
                 "masks": masks,
                 "keypoints": empty_keypoints(images),
@@ -59,17 +61,17 @@ class CourtSegmenter(nn.Module):
                 "heatmaps": empty_heatmaps(images),
             }
 
-        keypoints, visibility, heatmaps = self.decode_keypoints(features)
+        keypoints, visibility, heatmaps = self.decode_keypoints(features, keypoint_heatmaps, keypoint_objectness)
         return {"masks": masks, "keypoints": keypoints, "visibility": visibility, "heatmaps": heatmaps}
 
     def decode_keypoints(
         self,
         features: Float[Tensor, "B C Hf Wf"],
+        heatmap_head: nn.Module,
+        objectness_head: nn.Module,
     ) -> tuple[Float[Tensor, "B K 2"], Float[Tensor, "B K"], Float[Tensor, "B K Hf Wf"]]:
-        assert self.keypoint_heatmaps is not None
-        assert self.keypoint_objectness is not None
-        heatmaps = self.keypoint_heatmaps(features)
-        visibility_logits = self.keypoint_objectness(features).flatten(start_dim=2).amax(dim=2)
+        heatmaps = heatmap_head(features)
+        visibility_logits = objectness_head(features).flatten(start_dim=2).amax(dim=2)
         return softargmax_2d(heatmaps), visibility_logits, heatmaps
 
     def decode_masks(

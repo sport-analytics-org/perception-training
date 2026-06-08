@@ -1,4 +1,5 @@
 import random
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -7,34 +8,32 @@ import typer
 from jaxtyping import Float, UInt8
 from loguru import logger
 from sportanalytics import NbaCourt
-from torch import Tensor, nn
+from torch import Tensor
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from court_training.augment import CourtAugment
-from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
+from court_training.constants import TTA_SCALES
 from court_training.dataset import MaskDataset
-from court_training.model import DinoSegmenter, resize_images
+from court_training.model import CourtSegmenter
 
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
 
 
-def side_pairs(names: tuple[str, ...]) -> tuple[tuple[int, int], ...]:
-    index_by_name = {name: index for index, name in enumerate(names)}
-    left_names = [name for name in names if name.startswith("left_")]
-    pairs = []
-    for left_name in left_names:
-        right_name = f"right_{left_name.removeprefix('left_')}"
-        pairs.append((index_by_name[left_name], index_by_name[right_name]))
-    return tuple(pairs)
-
-
 BASKETBALL_MASK_NAMES = tuple(NbaCourt.areas())
-BASKETBALL_LEFT_RIGHT_PAIRS = side_pairs(BASKETBALL_MASK_NAMES)
+BASKETBALL_KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
 TRAIN_ROOT_ARGUMENT = typer.Argument(help="Flat exported training dataset root.")
 VAL_ROOT_ARGUMENT = typer.Argument(help="Flat exported validation dataset root.")
 OUTPUT_DIR_ARGUMENT = typer.Argument(help="Directory where checkpoints are written.")
+
+
+@dataclass(frozen=True)
+class EvalMetrics:
+    miou: float
+    class_iou: tuple[float, ...]
+    keypoint_error: float
+    visibility_accuracy: float
 
 
 @app.command()
@@ -51,6 +50,7 @@ def main(
     image_height: int = typer.Option(360, help="Training image height."),
     image_width: int = typer.Option(480, help="Training image width."),
     crop_cutout: bool = typer.Option(True, help="Train with random crop and image cutout augmentation."),
+    keypoint_loss_weight: float = typer.Option(0.2, help="Weight for keypoint coordinate and visibility losses."),
 ) -> None:
     set_seed(seed)
     output_dir = output_dir.expanduser().resolve()
@@ -61,7 +61,12 @@ def main(
         train_root.expanduser().resolve(),
         load_mask=load_mask,
         image_size=image_size,
-        transform=CourtAugment(BASKETBALL_LEFT_RIGHT_PAIRS, crop_cutout),
+        transform=CourtAugment(
+            mask_names=BASKETBALL_MASK_NAMES,
+            keypoint_names=BASKETBALL_KEYPOINT_NAMES,
+            image_size=image_size,
+            crop_cutout=crop_cutout,
+        ),
     )
     eval_data = MaskDataset(val_root.expanduser().resolve(), load_mask=load_mask, image_size=image_size)
     train_loader = DataLoader(
@@ -78,20 +83,26 @@ def main(
     )
 
     device = training_device()
-    model = DinoSegmenter(
-        num_masks=len(BASKETBALL_MASK_NAMES),
-        left_right_pairs=BASKETBALL_LEFT_RIGHT_PAIRS,
+    num_masks = len(BASKETBALL_MASK_NAMES)
+    num_keypoints = len(BASKETBALL_KEYPOINT_NAMES)
+    model = CourtSegmenter(
+        num_masks=num_masks,
+        num_keypoints=num_keypoints,
+        mask_names=BASKETBALL_MASK_NAMES,
+        keypoint_names=BASKETBALL_KEYPOINT_NAMES,
         backbone=backbone,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 
     logger.info("Training {} on {}", backbone, device)
     logger.info("Train images: {} | Eval images: {} | crop_cutout={}", len(train_data), len(eval_data), crop_cutout)
-    train(model, optimizer, train_loader, eval_loader, device, output_dir, epochs, len(BASKETBALL_MASK_NAMES))
+    logger.info("Masks: {}", num_masks)
+    logger.info("Keypoints: {}", num_keypoints)
+    train(model, optimizer, train_loader, eval_loader, device, output_dir, epochs, num_masks, keypoint_loss_weight)
 
 
 def train(
-    model: nn.Module,
+    model: CourtSegmenter,
     optimizer: torch.optim.Optimizer,
     train_loader: DataLoader,
     eval_loader: DataLoader,
@@ -99,67 +110,104 @@ def train(
     output_dir: Path,
     epochs: int,
     num_masks: int,
+    keypoint_loss_weight: float,
 ) -> None:
     best_miou = 0.0
     for epoch in range(1, epochs + 1):
-        train_loss = train_epoch(model, train_loader, optimizer, device)
-        eval_loss, miou, class_iou = evaluate(model, eval_loader, device, num_masks)
-        scores = format_scores(class_iou)
-        message = "Epoch {}/{} train_loss={:.4f} eval_loss={:.4f} eval_mIoU={:.4f} class_iou={}"
-        logger.info(message, epoch, epochs, train_loss, eval_loss, miou, scores)
-        if miou >= best_miou:
-            best_miou = miou
+        train_seg_loss, train_keypoint_loss = train_epoch(
+            model,
+            train_loader,
+            optimizer,
+            device,
+            keypoint_loss_weight,
+        )
+        metrics = evaluate(model, eval_loader, device, num_masks)
+        logger.info("Epoch {}/{} train_seg_loss={:.4f}", epoch, epochs, train_seg_loss)
+        logger.info("Epoch {}/{} train_keypoint_loss={:.4f}", epoch, epochs, train_keypoint_loss)
+        logger.info("Eval mIoU={:.4f}", metrics.miou)
+        logger.info("Eval class_iou={}", format_scores(metrics.class_iou))
+        logger.info("Keypoints error={:.4f}", metrics.keypoint_error)
+        logger.info("Visibility acc={:.3f}", metrics.visibility_accuracy)
+        if metrics.miou >= best_miou:
+            best_miou = metrics.miou
             torch.save(model.state_dict(), output_dir / "best.pt")
             logger.info("Saved {} with eval_mIoU={:.4f}", output_dir / "best.pt", best_miou)
 
 
 def train_epoch(
-    model: nn.Module,
+    model: CourtSegmenter,
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
-) -> float:
+    keypoint_loss_weight: float,
+) -> tuple[float, float]:
     model.train()
-    total_loss = 0.0
+    total_segmentation_loss = 0.0
+    total_keypoint_loss = 0.0
     total_images = 0
     for batch in tqdm(loader, desc="Training", leave=False):
-        images, masks = batch_to_tensors(batch, device)
+        tensors = to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
-        loss = segmentation_loss(model(images), masks)
+        prediction = model(tensors["image"])
+        mask_loss = segmentation_loss(prediction["masks"], tensors["mask"])
+        point_loss = keypoint_loss(
+            prediction["keypoints"],
+            prediction["visibility"],
+            prediction["heatmaps"],
+            tensors["keypoints"],
+            tensors["visibility"],
+        )
+        loss = mask_loss + keypoint_loss_weight * point_loss
         loss.backward()
         optimizer.step()
-        total_loss += loss.item() * images.shape[0]
-        total_images += images.shape[0]
-    return total_loss / total_images
+        batch_size = tensors["image"].shape[0]
+        total_segmentation_loss += mask_loss.item() * batch_size
+        total_keypoint_loss += point_loss.item() * batch_size
+        total_images += batch_size
+    return total_segmentation_loss / total_images, total_keypoint_loss / total_images
 
 
 @torch.inference_mode()
 def evaluate(
-    model: nn.Module,
+    model: CourtSegmenter,
     loader: DataLoader,
     device: torch.device,
     num_masks: int,
-) -> tuple[float, float, Tensor]:
+) -> EvalMetrics:
     model.eval()
-    total_loss = 0.0
-    total_images = 0
     intersection = torch.zeros(num_masks, device=device)
     union = torch.zeros(num_masks, device=device)
+    total_keypoint_error = 0.0
+    total_visible_keypoints = 0
+    total_visibility_correct = 0
+    total_visibility = 0
 
     for batch in tqdm(loader, desc="Evaluating", leave=False):
-        images, masks = batch_to_tensors(batch, device)
-        logits = predict_multiscale(model, images, TTA_SCALES)
-        total_loss += segmentation_loss(logits, masks).item() * images.shape[0]
+        tensors = to_device(batch, device)
+        prediction = model.predict(tensors["image"], TTA_SCALES)
 
-        predictions = logits.sigmoid() > 0.5
-        targets = masks > 0.5
+        visible = tensors["visibility"] > 0.5
+        error = (prediction["keypoints"][visible] - tensors["keypoints"][visible]).norm(dim=-1)
+        total_keypoint_error += error.sum().item()
+        total_visible_keypoints += int(visible.sum().item())
+        total_visibility_correct += int(((prediction["visibility"].sigmoid() > 0.5) == visible).sum().item())
+        total_visibility += tensors["visibility"].numel()
+
+        predictions = prediction["masks"].sigmoid() > 0.5
+        targets = tensors["mask"] > 0.5
         intersection += (predictions & targets).sum(dim=(0, 2, 3))
         union += (predictions | targets).sum(dim=(0, 2, 3))
-        total_images += images.shape[0]
 
     class_iou = intersection / union.clamp_min(1)
     miou = class_iou[union > 0].mean().item()
-    return total_loss / total_images, miou, class_iou
+    keypoint_error = total_keypoint_error / max(total_visible_keypoints, 1)
+    visibility_accuracy = total_visibility_correct / total_visibility
+    return EvalMetrics(
+        miou=miou,
+        class_iou=tuple(class_iou.tolist()),
+        keypoint_error=keypoint_error,
+        visibility_accuracy=visibility_accuracy,
+    )
 
 
 def segmentation_loss(logits: Float[Tensor, "B N H W"], masks: Float[Tensor, "B N H W"]) -> Tensor:
@@ -171,33 +219,50 @@ def segmentation_loss(logits: Float[Tensor, "B N H W"], masks: Float[Tensor, "B 
     return bce + dice
 
 
+def keypoint_loss(
+    predicted_keypoints: Float[Tensor, "B K 2"],
+    visibility_logits: Float[Tensor, "B K"],
+    heatmaps: Float[Tensor, "B K H W"],
+    keypoints: Float[Tensor, "B K 2"],
+    visibility: Float[Tensor, "B K"],
+) -> Tensor:
+    coordinate_errors = F.smooth_l1_loss(predicted_keypoints, keypoints, reduction="none").sum(dim=-1)
+    coordinate_loss = (coordinate_errors * visibility).sum() / visibility.sum().clamp_min(1)
+    heatmap_targets = gaussian_heatmaps(keypoints, visibility, heatmaps.shape[-2:])
+    heatmap_weights = 0.1 + 20 * heatmap_targets
+    heatmap_bce = F.binary_cross_entropy_with_logits(heatmaps, heatmap_targets, reduction="none")
+    heatmap_loss = (heatmap_bce * heatmap_weights).mean()
+    objectness_loss = F.binary_cross_entropy_with_logits(visibility_logits, visibility)
+    return 10 * coordinate_loss + 0.1 * heatmap_loss + objectness_loss
+
+
+def gaussian_heatmaps(
+    keypoints: Float[Tensor, "B K 2"],
+    visibility: Float[Tensor, "B K"],
+    size: tuple[int, int],
+    sigma: float = 1.5,
+) -> Float[Tensor, "B K H W"]:
+    height, width = size
+    x = torch.linspace(0, width - 1, width, device=keypoints.device, dtype=keypoints.dtype)
+    y = torch.linspace(0, height - 1, height, device=keypoints.device, dtype=keypoints.dtype)
+    grid_y, grid_x = torch.meshgrid(y, x, indexing="ij")
+    point_x = keypoints[..., 0, None, None] * (width - 1)
+    point_y = keypoints[..., 1, None, None] * (height - 1)
+    distance = (grid_x - point_x).square() + (grid_y - point_y).square()
+    heatmaps = torch.exp(-distance / (2 * sigma**2))
+    return heatmaps * visibility[..., None, None]
+
+
 def load_mask(bitfield: UInt8[np.ndarray, "H W"]) -> Float[np.ndarray, "H W N"]:
     masks = [(bitfield & (1 << bit)) > 0 for bit in range(len(BASKETBALL_MASK_NAMES))]
     return np.stack(masks, axis=-1).astype(np.float32)
 
 
-def batch_to_tensors(
+def to_device(
     batch: dict[str, Tensor],
     device: torch.device,
-) -> tuple[Float[Tensor, "B 3 H W"], Float[Tensor, "B N H W"]]:
-    images = batch["image"].to(device=device, dtype=torch.float32).permute(0, 3, 1, 2) / 255.0
-    masks = batch["mask"].to(device=device, dtype=torch.float32).permute(0, 3, 1, 2)
-    images = (images - IMAGE_MEAN.to(device)) / IMAGE_STD.to(device)
-    return images, masks
-
-
-def predict_multiscale(
-    model: nn.Module,
-    images: Float[Tensor, "B 3 H W"],
-    scales: tuple[float, ...],
-) -> Float[Tensor, "B N H W"]:
-    output_size = images.shape[-2:]
-    logits_by_scale = []
-    for scale in scales:
-        logits = model(resize_images(images, scale))
-        resized_logits = F.interpolate(logits, size=output_size, mode="bilinear", align_corners=False)
-        logits_by_scale.append(resized_logits)
-    return torch.stack(logits_by_scale).mean(dim=0)
+) -> dict[str, Tensor]:
+    return {key: value.to(device=device) for key, value in batch.items()}
 
 
 def set_seed(seed: int) -> None:
@@ -215,8 +280,8 @@ def training_device() -> torch.device:
     return torch.device("cpu")
 
 
-def format_scores(scores: Tensor) -> str:
-    return "[" + ", ".join(f"{score:.3f}" for score in scores.tolist()) + "]"
+def format_scores(scores: tuple[float, ...]) -> str:
+    return "[" + ", ".join(f"{score:.3f}" for score in scores) + "]"
 
 
 if __name__ == "__main__":

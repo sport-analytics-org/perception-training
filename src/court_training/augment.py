@@ -1,13 +1,17 @@
 import albumentations as A
 import numpy as np
+from jaxtyping import Bool, Float
 
-from court_training.dataset import Sample
+from court_training.dataset import NumpySample
+from court_training.flip import HorizontalFlip
 
 
 class CourtAugment:
     def __init__(
         self,
-        left_right_pairs: tuple[tuple[int, int], ...],
+        mask_names: tuple[str, ...],
+        keypoint_names: tuple[str, ...],
+        image_size: tuple[int, int],
         crop_cutout: bool = True,
         crop_p: float = 0.7,
         cutout_p: float = 0.5,
@@ -26,82 +30,78 @@ class CourtAugment:
         cutout_holes: tuple[int, int] = (1, 4),
         cutout_size: tuple[float, float] = (0.04, 0.18),
     ) -> None:
-        self.left_right_pairs = left_right_pairs
-        self.crop_cutout = crop_cutout
-        self.crop_p = crop_p
-        self.cutout_p = cutout_p
-        self.flip_p = flip_p
-        self.affine_p = affine_p
-        self.affine_scale = affine_scale
-        self.affine_translate = affine_translate
-        self.affine_rotate = affine_rotate
-        self.affine_shear = affine_shear
-        self.color_p = color_p
-        self.color_strength = color_strength
-        self.blur_p = blur_p
-        self.blur_sigma = blur_sigma
-        self.crop_scale = crop_scale
-        self.crop_ratio = crop_ratio
-        self.cutout_holes = cutout_holes
-        self.cutout_size = cutout_size
+        self.hflip = HorizontalFlip(mask_names=mask_names, keypoint_names=keypoint_names, p=flip_p)
 
-    def __call__(self, sample: Sample) -> Sample:
-        height, width = sample["image"].shape[:2]
-        transformed = self.transform((width, height))(image=sample["image"], mask=sample["mask"])
-        return {"image": transformed["image"], "mask": transformed["mask"].astype(np.float32)}
-
-    def transform(self, image_size: tuple[int, int]) -> A.Compose:
-        width, height = image_size
+        height, width = image_size
         transforms = [
             A.Affine(
-                scale=self.affine_scale,
-                translate_percent=self.affine_translate,
-                rotate=self.affine_rotate,
-                shear=self.affine_shear,
-                p=self.affine_p,
+                scale=affine_scale,
+                translate_percent=affine_translate,
+                rotate=affine_rotate,
+                shear=affine_shear,
+                p=affine_p,
             ),
-            SideAwareHorizontalFlip(self.left_right_pairs, p=self.flip_p),
             A.ColorJitter(
-                brightness=self.color_strength,
-                contrast=self.color_strength * 1.4,
-                saturation=self.color_strength,
+                brightness=color_strength,
+                contrast=color_strength * 1.4,
+                saturation=color_strength,
                 hue=0.0,
-                p=self.color_p,
+                p=color_p,
             ),
-            A.GaussianBlur(blur_limit=(3, 3), sigma_limit=self.blur_sigma, p=self.blur_p),
+            A.GaussianBlur(blur_limit=(3, 3), sigma_limit=blur_sigma, p=blur_p),
         ]
-        if self.crop_cutout:
-            crop = A.RandomResizedCrop(
-                size=(height, width),
-                scale=self.crop_scale,
-                ratio=self.crop_ratio,
-                p=self.crop_p,
-            )
+        if crop_cutout:
+            crop = A.RandomResizedCrop(size=(height, width), scale=crop_scale, ratio=crop_ratio, p=crop_p)
             cutout = A.CoarseDropout(
-                num_holes_range=self.cutout_holes,
-                hole_height_range=self.cutout_size,
-                hole_width_range=self.cutout_size,
+                num_holes_range=cutout_holes,
+                hole_height_range=cutout_size,
+                hole_width_range=cutout_size,
                 fill="random",
-                p=self.cutout_p,
+                p=cutout_p,
             )
             transforms.insert(0, crop)
             transforms.append(cutout)
-        return A.Compose(transforms)
+
+        self.geom = A.Compose(transforms, keypoint_params=A.KeypointParams(format="xy", remove_invisible=False))
+
+    def __call__(self, sample: NumpySample) -> NumpySample:
+        height, width = sample["image"].shape[:2]
+        keypoints = normalized_to_pixels(sample["keypoints"], width, height)
+        transformed = self.geom(
+            image=sample["image"],
+            mask=sample["mask"],
+            keypoints=keypoints,
+        )
+        keypoints = pixels_to_normalized(transformed["keypoints"], width, height)
+        visibility = sample["visibility"] * points_inside_image(keypoints)
+        flipped = self.hflip(
+            image=transformed["image"],
+            mask=transformed["mask"],
+            keypoints=keypoints,
+            visibility=visibility,
+        )
+        return flipped
 
 
-class SideAwareHorizontalFlip(A.HorizontalFlip):
-    def __init__(self, left_right_pairs: tuple[tuple[int, int], ...], p: float) -> None:
-        super().__init__(p=p)
-        self.left_right_pairs = left_right_pairs
+def normalized_to_pixels(
+    keypoints: Float[np.ndarray, "K 2"],
+    width: int,
+    height: int,
+) -> Float[np.ndarray, "K 2"]:
+    scale = np.array([width - 1, height - 1], dtype=np.float32)
+    return keypoints * scale
 
-    def apply_to_mask(self, mask: np.ndarray, *args: object, **params: object) -> np.ndarray:
-        flipped = np.fliplr(mask).copy()
-        return swap_left_right_channels(flipped, self.left_right_pairs)
+
+def pixels_to_normalized(
+    keypoints: Float[np.ndarray, "K 2"],
+    width: int,
+    height: int,
+) -> Float[np.ndarray, "K 2"]:
+    scale = np.array([width - 1, height - 1], dtype=np.float32)
+    return keypoints / scale
 
 
-def swap_left_right_channels(mask: np.ndarray, left_right_pairs: tuple[tuple[int, int], ...]) -> np.ndarray:
-    swapped = mask.copy()
-    for left, right in left_right_pairs:
-        swapped[:, :, left] = mask[:, :, right]
-        swapped[:, :, right] = mask[:, :, left]
-    return swapped
+def points_inside_image(keypoints: Float[np.ndarray, "K 2"]) -> Bool[np.ndarray, "*K"]:
+    x = keypoints[:, 0]
+    y = keypoints[:, 1]
+    return (x >= 0) & (x <= 1) & (y >= 0) & (y <= 1)

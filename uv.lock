@@ -1179,7 +1179,7 @@ wheels = [
 [[package]]
 name = "sport-analytics"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/sport-analytics-org/sport-analytics.git#edc924139a334d6e361c6e64b313159b821f6feb" }
+source = { git = "ssh://git@github.com/sport-analytics-org/sport-analytics.git#65f5a080e9f495123da04c0f4d5144020382ddd4" }
 dependencies = [
     { name = "jaxtyping" },
     { name = "loguru" },

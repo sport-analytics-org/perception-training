@@ -257,12 +257,13 @@ def to_device(
     batch: dict[str, Tensor],
     device: torch.device,
 ) -> dict[str, Tensor]:
-    return {
-        "images": batch["image"].to(device=device),
-        "masks": batch["mask"].to(device=device),
-        "keypoints": batch["keypoints"].to(device=device),
-        "visibility": batch["keypoint_visibility"].to(device=device),
+    names = {
+        "image": "images",
+        "mask": "masks",
+        "keypoints": "keypoints",
+        "keypoint_visibility": "visibility",
     }
+    return {output: batch[input_].to(device=device) for input_, output in names.items()}
 
 
 def set_seed(seed: int) -> None:

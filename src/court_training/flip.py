@@ -34,7 +34,7 @@ class HorizontalFlip:
             masks=masks,
             keypoints=keypoints,
             visibility=visibility,
-            width=image.shape[-2] if image is not None else None,
+            x_max=image.shape[-2] - 1 if image is not None else None,
             mask_names=self.mask_names,
             keypoint_names=self.keypoint_names,
         )
@@ -47,7 +47,7 @@ def flip(
     masks: Float[np.ndarray, "... H W N"] | None = None,
     keypoints: Float[np.ndarray, "... K 2"] | None = None,
     visibility: Float[np.ndarray, "... K"] | None = None,
-    width: int | None = None,
+    x_max: float | None = None,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
 ) -> dict[str, object]:
@@ -58,9 +58,9 @@ def flip(
         masks = np.flip(masks, axis=-2)
         output["masks"] = np.take(masks, flip_indices(mask_names), axis=-1).copy()
     if keypoints is not None:
-        assert width is not None
+        assert x_max is not None
         keypoints = keypoints.copy()
-        keypoints[..., 0] = width - 1 - keypoints[..., 0]
+        keypoints[..., 0] = x_max - keypoints[..., 0]
         output["keypoints"] = np.take(keypoints, flip_indices(keypoint_names), axis=-2)
     if visibility is not None:
         output["visibility"] = np.take(visibility, flip_indices(keypoint_names), axis=-1)

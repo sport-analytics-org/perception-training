@@ -15,11 +15,13 @@ class CourtSegmenter(nn.Module):
         num_masks: int,
         num_keypoints: int | None = None,
         mask_names: tuple[str, ...] = (),
+        keypoint_names: tuple[str, ...] = (),
         backbone: str = "vit_large_patch16_dinov3",
         pretrained: bool = True,
     ) -> None:
         super().__init__()
         self.mask_names = mask_names
+        self.keypoint_names = keypoint_names
         self.backbone = timm.create_model(backbone, pretrained=pretrained, num_classes=0, dynamic_img_size=True)
         self.decoder = nn.Sequential(
             nn.Conv2d(self.backbone.embed_dim, 256, kernel_size=3, padding=1),
@@ -70,10 +72,19 @@ class CourtSegmenter(nn.Module):
         keypoints, visibility_logits, _ = self.decode_keypoints(features)
         return keypoints, visibility_logits
 
+    def predict_keypoints_tta(
+        self,
+        images: Float[Tensor, "B 3 H W"],
+        scales: tuple[float, ...],
+    ) -> tuple[Float[Tensor, "B K 2"], Float[Tensor, "B K"]]:
+        return inference.predict_keypoints(self, images, scales, self.keypoint_names)
+
     def decode_keypoints(
         self,
         features: Float[Tensor, "B C Hf Wf"],
     ) -> tuple[Float[Tensor, "B K 2"], Float[Tensor, "B K"], Float[Tensor, "B K Hf Wf"]]:
+        assert self.keypoint_heatmaps is not None
+        assert self.keypoint_objectness is not None
         heatmaps = self.keypoint_heatmaps(features)
         visibility_logits = self.keypoint_objectness(features).flatten(start_dim=2).amax(dim=2)
         return softargmax_2d(heatmaps), visibility_logits, heatmaps

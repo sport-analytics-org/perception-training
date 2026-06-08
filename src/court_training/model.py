@@ -1,5 +1,3 @@
-from typing import NotRequired
-
 import timm
 import torch
 from jaxtyping import Float
@@ -7,10 +5,6 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from court_training import inference
-
-
-class ModelOutput(inference.Prediction):
-    heatmaps: NotRequired[Float[Tensor, "B K Hf Wf"]]
 
 
 class CourtSegmenter(nn.Module):
@@ -50,7 +44,7 @@ class CourtSegmenter(nn.Module):
                 nn.Conv2d(256, num_keypoints, kernel_size=1),
             )
 
-    def forward(self, images: Float[Tensor, "B 3 H W"]) -> ModelOutput:
+    def forward(self, images: Float[Tensor, "B 3 H W"]):
         features = self.encode(images)
         masks = self.decode_masks(features, images.shape[-2:])
         keypoint_heatmaps = self.keypoint_heatmaps

@@ -1,4 +1,5 @@
 import random
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,6 +24,8 @@ app = typer.Typer(help="Train a basketball court-mask segmenter.")
 
 BASKETBALL_MASK_NAMES = tuple(NbaCourt.areas())
 BASKETBALL_KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
+EMA_DECAY = 0.999
+EMA_WARMUP_UPDATES = 10
 TRAIN_ROOT_ARGUMENT = typer.Argument(help="Flat exported training dataset root.")
 VAL_ROOT_ARGUMENT = typer.Argument(help="Flat exported validation dataset root.")
 OUTPUT_DIR_ARGUMENT = typer.Argument(help="Directory where checkpoints are written.")
@@ -34,6 +37,27 @@ class EvalMetrics:
     class_iou: tuple[float, ...]
     keypoint_error: float
     visibility_accuracy: float
+
+
+class ModelEma:
+    def __init__(self, model: CourtSegmenter) -> None:
+        self.model = deepcopy(model).eval()
+        self.updates = 0
+        for parameter in self.model.parameters():
+            parameter.requires_grad_(False)
+
+    @torch.no_grad()
+    def update(self, model: CourtSegmenter) -> None:
+        self.updates += 1
+        decay = min(EMA_DECAY, (1 + self.updates) / (EMA_WARMUP_UPDATES + self.updates))
+        model_state = model.state_dict()
+        ema_state = self.model.state_dict()
+        for name, value in model_state.items():
+            ema_value = ema_state[name]
+            if ema_value.is_floating_point():
+                ema_value.mul_(decay).add_(value.detach(), alpha=1 - decay)
+            else:
+                ema_value.copy_(value)
 
 
 @app.command()
@@ -98,11 +122,13 @@ def main(
     logger.info("Train images: {} | Eval images: {} | crop_cutout={}", len(train_data), len(eval_data), crop_cutout)
     logger.info("Masks: {}", num_masks)
     logger.info("Keypoints: {}", num_keypoints)
-    train(model, optimizer, train_loader, eval_loader, device, output_dir, epochs, num_masks, keypoint_loss_weight)
+    ema = ModelEma(model)
+    train(model, ema, optimizer, train_loader, eval_loader, device, output_dir, epochs, num_masks, keypoint_loss_weight)
 
 
 def train(
     model: CourtSegmenter,
+    ema: ModelEma,
     optimizer: torch.optim.Optimizer,
     train_loader: DataLoader,
     eval_loader: DataLoader,
@@ -118,19 +144,20 @@ def train(
             model,
             train_loader,
             optimizer,
+            ema,
             device,
             keypoint_loss_weight,
         )
-        metrics = evaluate(model, eval_loader, device, num_masks)
+        metrics = evaluate(ema.model, eval_loader, device, num_masks)
         logger.info("Epoch {}/{} train_seg_loss={:.4f}", epoch, epochs, train_seg_loss)
         logger.info("Epoch {}/{} train_keypoint_loss={:.4f}", epoch, epochs, train_keypoint_loss)
-        logger.info("Eval mIoU={:.4f}", metrics.miou)
-        logger.info("Eval class_iou={}", format_scores(metrics.class_iou))
-        logger.info("Keypoints error={:.4f}", metrics.keypoint_error)
-        logger.info("Visibility acc={:.3f}", metrics.visibility_accuracy)
+        logger.info("EMA eval mIoU={:.4f}", metrics.miou)
+        logger.info("EMA class_iou={}", format_scores(metrics.class_iou))
+        logger.info("EMA keypoints error={:.4f}", metrics.keypoint_error)
+        logger.info("EMA visibility acc={:.3f}", metrics.visibility_accuracy)
         if metrics.miou >= best_miou:
             best_miou = metrics.miou
-            torch.save(model.state_dict(), output_dir / "best.pt")
+            torch.save(ema.model.state_dict(), output_dir / "best.pt")
             logger.info("Saved {} with eval_mIoU={:.4f}", output_dir / "best.pt", best_miou)
 
 
@@ -138,6 +165,7 @@ def train_epoch(
     model: CourtSegmenter,
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
+    ema: ModelEma,
     device: torch.device,
     keypoint_loss_weight: float,
 ) -> tuple[float, float]:
@@ -160,6 +188,7 @@ def train_epoch(
         loss = mask_loss + keypoint_loss_weight * point_loss
         loss.backward()
         optimizer.step()
+        ema.update(model)
         batch_size = tensors["image"].shape[0]
         total_segmentation_loss += mask_loss.item() * batch_size
         total_keypoint_loss += point_loss.item() * batch_size

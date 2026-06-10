@@ -16,7 +16,7 @@ from tqdm import tqdm
 from court_training.augment import CourtAugment
 from court_training.constants import TTA_SCALES
 from court_training.dataset import MaskDataset
-from court_training.model import CourtSegmenter
+from court_training.segmentation.model import CourtSegmenter
 
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
 
@@ -137,8 +137,6 @@ def train(
             best_miou = metrics.miou
             torch.save(model.state_dict(), output_dir / "best.pt")
             logger.info("Saved {} with eval_mIoU={:.4f}", output_dir / "best.pt", best_miou)
-    torch.save(model.state_dict(), output_dir / "final.pt")
-    logger.info("Saved final checkpoint to {}", output_dir / "final.pt")
 
 
 def lr_decay_factor(epoch: int, epochs: int) -> float:

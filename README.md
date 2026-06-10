@@ -1,9 +1,8 @@
 # Court Training
 
-Training and inference code for sport court segmentation models.
+Training and inference code for sport court perception models.
 
-The current basketball model predicts six court masks from broadcast frames. Mask names come from
-`sportanalytics.NbaCourt.areas()` and are ordered as court, three-point area, painted area, with left before right.
+## Dataset Export
 
 Input datasets are expected to be flat train/val folders:
 
@@ -43,6 +42,23 @@ uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/output
   --train-dataset basketball_player_detection_2 \
   --no-masks \
   --detections
+```
+
+## Segmentation
+
+The current basketball segmentation model predicts six court masks from broadcast frames. Mask names come from
+`sportanalytics.NbaCourt.areas()` and are ordered as court, three-point area, painted area, with left before right.
+
+Train the basketball segmentation model:
+
+```bash
+uv run python scripts/segmentation/train_basket.py /path/to/output/train /path/to/output/val /path/to/checkpoints
+```
+
+Predict segmentation masks and fit homographies:
+
+```bash
+uv run python scripts/segmentation/predict_and_fit_homography.py /path/to/basketball-imgs /path/to/checkpoint.pt /path/to/report
 ```
 
 ## Homography fitting

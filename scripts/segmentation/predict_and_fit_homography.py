@@ -19,7 +19,7 @@ from court_training.homography import (
     find_keypoints_homography,
     fit_homography,
 )
-from court_training.model import CourtSegmenter
+from court_training.segmentation.model import CourtSegmenter
 from court_training.warp import warp
 
 app = typer.Typer(help="Predict basketball masks, fit homographies to them, and write an HTML report.")

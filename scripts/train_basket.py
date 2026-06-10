@@ -42,7 +42,7 @@ def main(
     val_root: Path = VAL_ROOT_ARGUMENT,
     output_dir: Path = OUTPUT_DIR_ARGUMENT,
     backbone: str = typer.Option("vit_large_patch16_dinov3", help="timm backbone name."),
-    epochs: int = typer.Option(140, help="Training epochs."),
+    epochs: int = typer.Option(40, help="Training epochs."),
     batch_size: int = typer.Option(2, help="Training batch size."),
     learning_rate: float = typer.Option(3e-5, help="AdamW learning rate."),
     num_workers: int = typer.Option(2, help="DataLoader workers."),
@@ -93,6 +93,8 @@ def main(
         backbone=backbone,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+    for group in optimizer.param_groups:
+        group["initial_lr"] = learning_rate
 
     logger.info("Training {} on {}", backbone, device)
     logger.info("Train images: {} | Eval images: {} | crop_cutout={}", len(train_data), len(eval_data), crop_cutout)
@@ -114,6 +116,8 @@ def train(
 ) -> None:
     best_miou = 0.0
     for epoch in range(1, epochs + 1):
+        learning_rate_factor = lr_decay_factor(epoch, epochs)
+        set_lr(optimizer, learning_rate_factor)
         train_seg_loss, train_keypoint_loss = train_epoch(
             model,
             train_loader,
@@ -122,6 +126,7 @@ def train(
             keypoint_loss_weight,
         )
         metrics = evaluate(model, eval_loader, device, num_masks)
+        logger.info("Epoch {}/{} lr_factor={:.3f}", epoch, epochs, learning_rate_factor)
         logger.info("Epoch {}/{} train_seg_loss={:.4f}", epoch, epochs, train_seg_loss)
         logger.info("Epoch {}/{} train_keypoint_loss={:.4f}", epoch, epochs, train_keypoint_loss)
         logger.info("Eval mIoU={:.4f}", metrics.miou)
@@ -132,6 +137,19 @@ def train(
             best_miou = metrics.miou
             torch.save(model.state_dict(), output_dir / "best.pt")
             logger.info("Saved {} with eval_mIoU={:.4f}", output_dir / "best.pt", best_miou)
+
+
+def lr_decay_factor(epoch: int, epochs: int) -> float:
+    decay_epochs = max(1, round(epochs * 0.1))
+    decay_start = epochs - decay_epochs
+    if epoch <= decay_start:
+        return 1.0
+    return (epochs - epoch + 1) / decay_epochs
+
+
+def set_lr(optimizer: torch.optim.Optimizer, factor: float) -> None:
+    for group in optimizer.param_groups:
+        group["lr"] = group["initial_lr"] * factor
 
 
 def train_epoch(

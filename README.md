@@ -12,20 +12,37 @@ dataset-root/
   train/
     images/*.jpg
     masks/*.webp
+    keypoints/*.json
+    detections/*.npz
   val/
     images/*.jpg
     masks/*.webp
+    keypoints/*.json
+    detections/*.npz
 ```
 
+The `masks`, `keypoints`, and `detections` directories are only created when those annotations are exported.
 Mask files are grayscale WebP bitfields. Bit `0..5` maps to the mask order above.
+Detection files are compressed NumPy archives with normalized `boxes_xywh` and `category_names`
+arrays. Samples without detection annotations get empty arrays.
 
 To export original labelled subdatasets into that layout:
 
 ```bash
-uv run python scripts/export_dataset.py /path/to/output \
-  --train-source /path/to/basketball_51 \
-  --train-source /path/to/borgo \
-  --val-source /path/to/e_bard_detection
+uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/output \
+  --train-dataset basketball_51 \
+  --train-dataset borgo \
+  --val-dataset e_bard_detection
+```
+
+Use `--masks/--no-masks` and `--detections/--no-detections` to choose which annotations to
+export. At least one train or val subdataset must be selected, but both splits are optional:
+
+```bash
+uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/output \
+  --train-dataset basketball_player_detection_2 \
+  --no-masks \
+  --detections
 ```
 
 ## Homography fitting

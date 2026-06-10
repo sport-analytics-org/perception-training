@@ -1,50 +1,72 @@
+import dataclasses
 import json
 import tarfile
 from pathlib import Path
 
+import numpy as np
 import typer
 from loguru import logger
 from tqdm import tqdm
 
-app = typer.Typer(help="Export reviewed tar-sharded subdatasets into flat train/val folders.")
-TRAIN_DATASET_OPTION = typer.Option(..., help="Subdataset name to copy into train.")
-VAL_DATASET_OPTION = typer.Option(..., help="Subdataset name to copy into val.")
+app = typer.Typer(help="Export tar-sharded subdatasets into flat train/val folders.")
+TRAIN_DATASET_OPTION = typer.Option(None, help="Subdataset name to copy into train.")
+VAL_DATASET_OPTION = typer.Option(None, help="Subdataset name to copy into val.")
+
+
+@dataclasses.dataclass(frozen=True)
+class ExportOptions:
+    masks: bool
+    keypoints: bool
+    detections: bool
 
 
 @app.command()
 def main(
     dataset_root: Path,
     output_root: Path,
-    train_dataset: list[str] = TRAIN_DATASET_OPTION,
-    val_dataset: list[str] = VAL_DATASET_OPTION,
-    keypoints: bool = typer.Option(True, "--keypoints/--no-keypoints", help="Export keypoints with images and masks."),
+    train_dataset: list[str] | None = TRAIN_DATASET_OPTION,
+    val_dataset: list[str] | None = VAL_DATASET_OPTION,
+    masks: bool = typer.Option(True, "--masks/--no-masks", help="Export reviewed segmentation masks."),
+    keypoints: bool = typer.Option(True, "--keypoints/--no-keypoints", help="Export keypoints with masks."),
+    detections: bool = typer.Option(
+        True,
+        "--detections/--no-detections",
+        help="Export object detections as NPZ files.",
+    ),
 ) -> None:
+    if not masks and not detections:
+        raise typer.BadParameter("At least one of --masks or --detections must be enabled.")
+    if not train_dataset and not val_dataset:
+        raise typer.BadParameter("Select at least one subdataset with --train-dataset or --val-dataset.")
+
     dataset_root = dataset_root.expanduser().resolve()
     output_root = output_root.expanduser().resolve()
-    export_split(dataset_root, train_dataset, output_root / "train", keypoints)
-    export_split(dataset_root, val_dataset, output_root / "val", keypoints)
+    options = ExportOptions(masks=masks, keypoints=keypoints, detections=detections)
+
+    if train_dataset:
+        export_split(dataset_root, output_root / "train", train_dataset, options)
+    if val_dataset:
+        export_split(dataset_root, output_root / "val", val_dataset, options)
 
 
-def export_split(dataset_root: Path, dataset_names: list[str], output_root: Path, export_keypoints: bool) -> None:
-    image_output = output_root / "images"
-    mask_output = output_root / "masks"
-    image_output.mkdir(parents=True, exist_ok=True)
-    mask_output.mkdir(parents=True, exist_ok=True)
-
-    keypoint_output = output_root / "keypoints"
-    if export_keypoints:
-        keypoint_output.mkdir(parents=True, exist_ok=True)
+def export_split(
+    dataset_root: Path,
+    output_root: Path,
+    dataset_names: list[str],
+    options: ExportOptions,
+) -> None:
+    make_output_dirs(output_root, options)
 
     for dataset_name in dataset_names:
         copied = 0
         skipped = 0
         shard_paths = sorted((dataset_root / dataset_name).glob("*.tar"))
         for shard_path in tqdm(shard_paths, desc=dataset_name):
-            shard_copied, shard_skipped = export_shard(shard_path, dataset_name, output_root, export_keypoints)
+            shard_copied, shard_skipped = export_shard(shard_path, dataset_name, output_root, options)
             copied += shard_copied
             skipped += shard_skipped
-        logger.info("{}: copied {} reviewed images", dataset_name, copied)
-        if export_keypoints:
+        logger.info("{}: copied {} images", dataset_name, copied)
+        if options.masks and options.keypoints:
             logger.info("{}: skipped {} reviewed images without keypoints", dataset_name, skipped)
 
 
@@ -52,34 +74,58 @@ def export_shard(
     shard_path: Path,
     dataset_name: str,
     output_root: Path,
-    export_keypoints: bool,
+    options: ExportOptions,
 ) -> tuple[int, int]:
     with tarfile.open(shard_path) as shard:
         members = {member.name: member for member in shard.getmembers() if member.isfile()}
         metadata = read_json(shard, members, f"metadata/{shard_id(shard_path)}.json")
         keypoints = read_json(shard, members, f"keypoints/{shard_id(shard_path)}.json").get("keypoints", {})
-        reviewed_keys = reviewed_images(metadata)
+        reviewed_keys = reviewed_images(metadata, members)
+        detection_keys = {Path(name).with_suffix(".jpg").name for name in members if name.startswith("detections/")}
+        export_keys = set()
+        if options.masks:
+            export_keys |= reviewed_keys
+        if options.detections:
+            export_keys |= detection_keys
 
         copied = 0
         skipped = 0
-        for image_key in sorted(reviewed_keys):
+        for image_key in sorted(export_keys):
             image_name = Path(image_key).name
-            image_member = members[f"images/{image_name}"]
-            mask_member = members[f"masks/{Path(image_name).with_suffix('.webp')}"]
-            image_keypoints = keypoints.get(image_key)
-            if export_keypoints and image_keypoints is None:
+            image_member = require_member(members, f"images/{image_name}")
+            mask_name = f"masks/{Path(image_name).with_suffix('.webp')}"
+            keypoint_data = keypoints.get(image_key)
+            should_export_mask = options.masks and image_key in reviewed_keys
+            if should_export_mask and options.keypoints and keypoint_data is None:
+                should_export_mask = False
                 skipped += 1
-                continue
+                if not options.detections:
+                    continue
 
             name = flat_name(dataset_name, image_key)
             write_member(shard, image_member, output_root / "images" / f"{name}.jpg")
-            write_member(shard, mask_member, output_root / "masks" / f"{name}.webp")
-            if export_keypoints:
-                output = json.dumps(image_keypoints, indent=2) + "\n"
+            if should_export_mask:
+                mask_member = require_member(members, mask_name)
+                write_member(shard, mask_member, output_root / "masks" / f"{name}.webp")
+            if should_export_mask and options.keypoints:
+                output = json.dumps(keypoint_data, indent=2) + "\n"
                 (output_root / "keypoints" / f"{name}.json").write_text(output)
+            if options.detections:
+                detections = read_json(shard, members, f"detections/{Path(image_name).with_suffix('.json')}")
+                write_detections_npz(detections, output_root / "detections" / f"{name}.npz")
             copied += 1
 
     return copied, skipped
+
+
+def make_output_dirs(output_root: Path, options: ExportOptions) -> None:
+    (output_root / "images").mkdir(parents=True, exist_ok=True)
+    if options.masks:
+        (output_root / "masks").mkdir(parents=True, exist_ok=True)
+    if options.masks and options.keypoints:
+        (output_root / "keypoints").mkdir(parents=True, exist_ok=True)
+    if options.detections:
+        (output_root / "detections").mkdir(parents=True, exist_ok=True)
 
 
 def shard_id(path: Path) -> str:
@@ -91,17 +137,44 @@ def read_json(shard: tarfile.TarFile, members: dict[str, tarfile.TarInfo], name:
     if member is None:
         return {}
     file = shard.extractfile(member)
-    return json.load(file) if file else {}
+    if file is None:
+        raise FileNotFoundError(name)
+    return json.load(file)
 
 
-def reviewed_images(metadata: dict) -> set[str]:
+def reviewed_images(metadata: dict, members: dict[str, tarfile.TarInfo]) -> set[str]:
     reviews = metadata.get("reviews", {})
-    return {image_key for image_key, masks in reviews.items() if all(masks.values())}
+    if reviews:
+        return {image_key for image_key, masks in reviews.items() if all(masks.values())}
+    if metadata.get("approvals", {}).get("masks"):
+        return {Path(member).with_suffix(".jpg").name for member in members if member.startswith("masks/")}
+    return set()
+
+
+def require_member(members: dict[str, tarfile.TarInfo], name: str) -> tarfile.TarInfo:
+    member = members.get(name)
+    if member is None:
+        raise FileNotFoundError(name)
+    return member
 
 
 def write_member(shard: tarfile.TarFile, member: tarfile.TarInfo, output_path: Path) -> None:
     file = shard.extractfile(member)
-    output_path.write_bytes(file.read() if file else b"")
+    if file is None:
+        raise FileNotFoundError(member.name)
+    output_path.write_bytes(file.read())
+
+
+def write_detections_npz(data: dict, output_path: Path) -> None:
+    detections = data.get("detections", [])
+    categories = data.get("categories", [])
+    boxes_xywh = np.array([detection["bbox_xywh"] for detection in detections], dtype=np.float32).reshape(-1, 4)
+    category_names = np.array([category["name"] for category in categories], dtype=str)
+    np.savez_compressed(
+        output_path,
+        boxes_xywh=boxes_xywh,
+        category_names=category_names,
+    )
 
 
 def flat_name(dataset_name: str, image_key: str) -> str:

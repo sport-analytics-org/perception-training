@@ -16,7 +16,7 @@ from tqdm import tqdm
 from court_training.augment import CourtAugment
 from court_training.constants import TTA_SCALES
 from court_training.dataset import MaskDataset
-from court_training.model import CourtSegmenter
+from court_training.segmentation.model import CourtSegmenter
 
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
 

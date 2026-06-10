@@ -1,7 +1,7 @@
 [project]
 name = "court-training"
 version = "0.1.0"
-description = "Training code for sport court segmentation models."
+description = "Training code for sport court perception models."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

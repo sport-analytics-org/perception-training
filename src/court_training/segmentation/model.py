@@ -4,7 +4,7 @@ from jaxtyping import Float
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from court_training import inference
+from court_training.segmentation import inference
 
 
 class CourtSegmenter(nn.Module):

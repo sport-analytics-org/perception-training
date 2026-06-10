@@ -137,6 +137,8 @@ def train(
             best_miou = metrics.miou
             torch.save(model.state_dict(), output_dir / "best.pt")
             logger.info("Saved {} with eval_mIoU={:.4f}", output_dir / "best.pt", best_miou)
+    torch.save(model.state_dict(), output_dir / "final.pt")
+    logger.info("Saved final checkpoint to {}", output_dir / "final.pt")
 
 
 def lr_decay_factor(epoch: int, epochs: int) -> float:

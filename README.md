@@ -33,7 +33,7 @@ uv run python scripts/export_dataset.py /path/to/output \
 Fit a centered-initialization homography to a labeled basketball raster mask:
 
 ```bash
-uv run python scripts/fit_homography.py /path/to/mask.webp --court fiba
+uv run python scripts/dataset/fit_homography.py /path/to/mask.webp --court fiba
 ```
 
 The script reads raster bitfield masks directly and prints the fitted homography plus initial/final IoU.

@@ -1,11 +1,12 @@
 import html
+import json
 import random
 from pathlib import Path
 
 import numpy as np
 import torch
 import typer
-from jaxtyping import Float
+from jaxtyping import Float, UInt8
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
 from sportanalytics import FibaCourt, NbaCourt
@@ -14,16 +15,24 @@ from torch import Tensor
 from tqdm import tqdm
 
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
-from court_training.homography import fit_homography, keypoint_homography, render_masks
+from court_training.homography import (
+    find_keypoints_homography,
+    fit_homography,
+)
 from court_training.model import CourtSegmenter
+from court_training.warp import warp
 
 app = typer.Typer(help="Predict basketball masks, fit homographies to them, and write an HTML report.")
 
 DATASET_ROOT_ARGUMENT = typer.Argument(help="Basketball image dataset root.")
 CHECKPOINT_ARGUMENT = typer.Argument(help="CourtSegmenter checkpoint.")
 OUTPUT_DIR_ARGUMENT = typer.Argument(help="Directory where the HTML report is written.")
+DATASETS_OPTION = typer.Option(
+    ["basketball_51", "borgo", "e_bard_detection"],
+    "--dataset",
+    help="Subdataset to sample. Can be passed multiple times.",
+)
 IMAGE_SIZE = (360, 480)
-FIT_SIZE = 384
 MASK_NAMES = tuple(NbaCourt.areas())
 KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
 COLORS = np.array(
@@ -44,7 +53,8 @@ def main(
     dataset_root: Path = DATASET_ROOT_ARGUMENT,
     checkpoint: Path = CHECKPOINT_ARGUMENT,
     output_dir: Path = OUTPUT_DIR_ARGUMENT,
-    count: int = typer.Option(10, help="Number of random images to sample."),
+    count_per_dataset: int = typer.Option(100, help="Number of random images to sample per subdataset."),
+    datasets: list[str] = DATASETS_OPTION,
     seed: int = typer.Option(7, help="Random seed."),
 ) -> None:
     dataset_root = dataset_root.expanduser().resolve()
@@ -54,42 +64,70 @@ def main(
     panel_dir.mkdir(parents=True, exist_ok=True)
 
     image_paths = unlabelled_images(dataset_root)
-    if len(image_paths) < count:
-        raise ValueError(f"Only found {len(image_paths)} unlabelled images under {dataset_root}")
-
     device = prediction_device()
     model = load_model(checkpoint, device)
     rng = random.Random(seed)
-    samples = rng.sample(image_paths, count)
-    logger.info("Sampling {} images from {} unlabelled images", count, len(image_paths))
+    samples = sample_by_dataset(image_paths, count_per_dataset * 10, tuple(datasets), rng)
+    expected = count_per_dataset * len(datasets)
+    logger.info("Sampling up to {} candidates from {} unlabelled images", len(samples), len(image_paths))
 
     rows = []
+    counts = dict.fromkeys(datasets, 0)
     for image_path in tqdm(samples, desc="Predicting and fitting"):
-        image = Image.open(image_path).convert("RGB")
-        image = image.resize((IMAGE_SIZE[1], IMAGE_SIZE[0]), Image.Resampling.BILINEAR)
-        prediction = model.predict(image_to_tensor(image, device), TTA_SCALES)
+        if len(rows) == expected:
+            break
+        dataset = image_path.relative_to(dataset_root / "images").parts[0]
+        if counts[dataset] == count_per_dataset:
+            continue
+        original_image = Image.open(image_path).convert("RGB")
+        image = original_image.resize((IMAGE_SIZE[1], IMAGE_SIZE[0]), Image.Resampling.BILINEAR)
+        image_tensor = image_to_tensor(image, device)
+        prediction = model.predict(image_tensor, TTA_SCALES)
         probabilities = prediction["masks"][0].sigmoid().cpu()
         keypoints = prediction["keypoints"][0].cpu().numpy()
         visibility = prediction["visibility"][0].sigmoid().cpu().numpy()
 
-        dataset = image_path.relative_to(dataset_root / "images").parts[0]
-        court_name, court = court_for_dataset(dataset)
-        initial = keypoint_homography(court, KEYPOINT_NAMES, keypoints, visibility)
-        homography = fit_homography(
-            probabilities,
-            court,
-            MASK_NAMES,
-            initial,
-            size=FIT_SIZE,
-            boosted_masks=("3pt_area", "painted_area"),
-            boost=1.5,
+        court_name = "fiba" if dataset == "borgo" else "nba"
+        court = FibaCourt if dataset == "borgo" else NbaCourt
+        source_masks = template_masks(court, MASK_NAMES, probabilities.shape[-1], probabilities.device)
+        multipliers = torch.tensor(
+            [1.5 if "3pt_area" in name or "painted_area" in name else 1.0 for name in MASK_NAMES],
+            device=probabilities.device,
         )
-        fitted = render_masks(homography, court, MASK_NAMES, probabilities.shape[-2:], FIT_SIZE)
+        visible = visibility >= 0.5
+        if visible.sum() < 4:
+            logger.info("Skipping {}: only {} visible keypoints", image_path, visible.sum())
+            continue
+        source_keypoints = normalized_keypoints(court)
+        initial = torch.tensor(
+            find_keypoints_homography(source_keypoints[visible], keypoints[visible]),
+            dtype=probabilities.dtype,
+        )
+        homography = fit_homography(source_masks, probabilities, initial, multipliers)
+        homography_tensor = torch.tensor(homography, dtype=source_masks.dtype, device=source_masks.device)
+        fitted = warp(source_masks, homography_tensor, probabilities.shape[-2:])
+        fitted_original = render_at_image_size(court, homography, original_image.size)
+        fitted_keypoints, fitted_visibility = project_keypoints(court, homography)
         score = soft_iou(fitted, probabilities)
 
+        save_labels(
+            dataset_root,
+            image_path,
+            court_name,
+            fitted_original,
+            homography,
+            fitted_keypoints,
+            fitted_visibility,
+            score,
+        )
         panel_path = panel_dir / f"{len(rows):02d}_{image_path.stem}.jpg"
         make_panel(image, probabilities, fitted, keypoints, visibility, image_path, court_name, score, panel_path)
         rows.append((image_path.relative_to(dataset_root), panel_path.relative_to(output_dir), court_name, score))
+        counts[dataset] += 1
+
+    missing = {dataset: count_per_dataset - count for dataset, count in counts.items() if count < count_per_dataset}
+    if missing:
+        raise ValueError(f"Not enough successful fits: {missing}")
 
     write_report(output_dir / "index.html", rows)
     logger.info("Wrote {}", output_dir / "index.html")
@@ -111,13 +149,25 @@ def load_model(checkpoint: Path, device: torch.device) -> CourtSegmenter:
 
 
 def unlabelled_images(dataset_root: Path) -> list[Path]:
-    image_paths = sorted((dataset_root / "images").glob("*/*/*.jpg"))
-    return [path for path in image_paths if not mask_path(dataset_root, path).is_file()]
+    images_root = dataset_root / "images"
+    masks_root = dataset_root / "masks"
+    paths = []
+    for image_path in sorted(images_root.glob("*/*/*.jpg")):
+        mask_path = masks_root / image_path.relative_to(images_root).with_suffix(".webp")
+        if not mask_path.is_file():
+            paths.append(image_path)
+    return paths
 
 
-def mask_path(dataset_root: Path, image_path: Path) -> Path:
-    relative = image_path.relative_to(dataset_root / "images")
-    return dataset_root / "masks" / relative.with_suffix(".webp")
+def sample_by_dataset(image_paths: list[Path], count: int, datasets: tuple[str, ...], rng: random.Random) -> list[Path]:
+    samples = []
+    for dataset in datasets:
+        paths = [path for path in image_paths if path.parent.parent.name == dataset]
+        if len(paths) < count:
+            raise ValueError(f"{dataset} has {len(paths)} unlabelled images, cannot sample {count}")
+        samples.extend(rng.sample(paths, count))
+    rng.shuffle(samples)
+    return samples
 
 
 def image_to_tensor(image: Image.Image, device: torch.device) -> Float[Tensor, "1 3 H W"]:
@@ -134,10 +184,107 @@ def prediction_device() -> torch.device:
     return torch.device("cpu")
 
 
-def court_for_dataset(dataset: str) -> tuple[str, BasketCourt]:
-    if dataset == "borgo":
-        return "fiba", FibaCourt
-    return "nba", NbaCourt
+def normalized_keypoints(court: BasketCourt) -> Float[np.ndarray, "K 2"]:
+    points_by_name = court.keypoints()
+    points = np.array([points_by_name[name] for name in KEYPOINT_NAMES], dtype=np.float64)
+    x = (points[:, 0] + court.half_length) / court.length
+    y = (points[:, 1] + court.half_width) / court.width
+    return np.stack([x, y], axis=1)
+
+
+def template_masks(
+    court: BasketCourt,
+    labels: tuple[str, ...],
+    width: int,
+    device: torch.device,
+) -> Float[Tensor, "N H W"]:
+    masks = []
+    for label in labels:
+        image = court.get_mask_image(label, width).convert("L")
+        masks.append(torch.tensor(np.asarray(image, dtype=np.float32) / 255, device=device))
+    return torch.stack(masks)
+
+
+def render_at_image_size(
+    court: BasketCourt,
+    homography: Float[np.ndarray, "3 3"],
+    size: tuple[int, int],
+) -> Float[Tensor, "N H W"]:
+    width, height = size
+    source_masks = template_masks(court, MASK_NAMES, width, torch.device("cpu"))
+    homography_tensor = torch.tensor(homography, dtype=source_masks.dtype)
+    return warp(source_masks, homography_tensor, (height, width))
+
+
+def project_keypoints(
+    court: BasketCourt,
+    homography: Float[np.ndarray, "3 3"],
+) -> tuple[Float[np.ndarray, "K 2"], np.ndarray]:
+    points = normalized_keypoints(court)
+    homogeneous = np.concatenate([points, np.ones((len(points), 1))], axis=1)
+    projected = homogeneous @ homography.T
+    keypoints = projected[:, :2] / projected[:, 2:]
+    visibility = np.logical_and.reduce(
+        [
+            keypoints[:, 0] >= 0,
+            keypoints[:, 0] <= 1,
+            keypoints[:, 1] >= 0,
+            keypoints[:, 1] <= 1,
+        ]
+    )
+    return keypoints, visibility
+
+
+def save_labels(
+    dataset_root: Path,
+    image_path: Path,
+    court_name: str,
+    masks: Float[Tensor, "N H W"],
+    homography: Float[np.ndarray, "3 3"],
+    keypoints: Float[np.ndarray, "K 2"],
+    visibility: np.ndarray,
+    score: float,
+) -> None:
+    image_relative = image_path.relative_to(dataset_root / "images")
+    dataset, shard = image_relative.parts[:2]
+    image_key = str(Path(*image_relative.parts[1:]))
+
+    mask_path = dataset_root / "masks" / image_relative.with_suffix(".webp")
+    mask_path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(bitfield(masks)).save(mask_path, lossless=True)
+
+    homography_path = dataset_root / "homography" / dataset / f"{shard}.json"
+    update_json(
+        homography_path,
+        "homographies",
+        image_key,
+        {
+            "court": court_name,
+            "matrix": homography.tolist(),
+            "soft_iou": score,
+        },
+    )
+
+    keypoint_path = dataset_root / "keypoints" / dataset / f"{shard}.json"
+    points = [
+        {"position": position.tolist(), "visible": bool(visible)}
+        for position, visible in zip(keypoints, visibility, strict=True)
+    ]
+    update_json(keypoint_path, "keypoints", image_key, {"court": court_name, "points": points})
+
+
+def bitfield(masks: Float[Tensor, "N H W"]) -> UInt8[np.ndarray, "H W"]:
+    output = np.zeros(masks.shape[-2:], dtype=np.uint8)
+    for index, mask in enumerate(masks):
+        output[mask.numpy() > 0.5] |= np.uint8(1 << index)
+    return output
+
+
+def update_json(path: Path, key: str, image_key: str, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = json.loads(path.read_text()) if path.is_file() else {key: {}}
+    data[key][image_key] = value
+    path.write_text(json.dumps(data, indent=2) + "\n")
 
 
 def soft_iou(predicted: Float[Tensor, "N H W"], target: Float[Tensor, "N H W"]) -> float:

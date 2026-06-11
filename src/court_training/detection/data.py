@@ -18,8 +18,8 @@ class Target(TypedDict):
 @dataclass(frozen=True)
 class DetectionSample:
     image_path: Path
-    boxes_xywh: np.ndarray
-    category_names: tuple[str, ...]
+    boxes_cxcywh: np.ndarray
+    labels: np.ndarray
 
 
 def load_split(root: Path) -> list[DetectionSample]:
@@ -29,8 +29,8 @@ def load_split(root: Path) -> list[DetectionSample]:
     samples = []
     for image_path in image_paths:
         detection_path = dataset.annotation_path(root, image_path, "detections", ".npz")
-        boxes_xywh, category_names = dataset.read_detections(detection_path)
-        samples.append(DetectionSample(image_path=image_path, boxes_xywh=boxes_xywh, category_names=category_names))
+        boxes_cxcywh, labels = dataset.read_detections(detection_path)
+        samples.append(DetectionSample(image_path=image_path, boxes_cxcywh=boxes_cxcywh, labels=labels))
     return samples
 
 

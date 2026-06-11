@@ -65,7 +65,7 @@ class CourtDataset(Dataset):
             self.boxes = {}
             for path in image_paths:
                 detection_path = annotation_path(root, path, "detections", ".npz")
-                boxes_cxcywh, labels = encode_boxes(*read_detections(detection_path))
+                boxes_cxcywh, labels = read_detections(detection_path)
                 if len(labels):
                     self.boxes[path] = (boxes_cxcywh, labels)
             image_paths = [path for path in image_paths if path in self.boxes]
@@ -134,24 +134,17 @@ def read_keypoints(path: Path) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarr
     return keypoints, visibility
 
 
-def read_detections(path: Path) -> tuple[Float[np.ndarray, "D 4"], tuple[str, ...]]:
+def read_detections(path: Path) -> tuple[Float[np.ndarray, "D 4"], Int64[np.ndarray, "D"]]:
     data = np.load(path)
     boxes_xywh = data["boxes_xywh"].astype(np.float32)
-    category_names = tuple(data["category_names"].astype(str).tolist())
+    category_names = data["category_names"].astype(str).tolist()
     if len(boxes_xywh) != len(category_names):
         raise ValueError(f"{path} has {len(boxes_xywh)} boxes and {len(category_names)} category names")
-    return boxes_xywh, category_names
-
-
-def encode_boxes(
-    boxes_xywh: Float[np.ndarray, "D 4"],
-    category_names: tuple[str, ...],
-) -> tuple[Float[np.ndarray, "D 4"], Int64[np.ndarray, "D"]]:
     boxes = []
     labels = []
     for box, name in zip(boxes_xywh, category_names, strict=True):
         if name not in BASKETBALL_DETECTION_CLASSES:
-            raise ValueError(f"Unknown detection class: {name}")
+            raise ValueError(f"{path} has unknown detection class: {name}")
         x, y, width, height = box.tolist()
         boxes.append([x + width / 2, y + height / 2, width, height])
         labels.append(BASKETBALL_DETECTION_CLASSES.index(name))

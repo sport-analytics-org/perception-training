@@ -19,6 +19,7 @@ def predict(
     nms_iou: float,
     max_detections: int,
 ) -> dict[str, Tensor]:
+    """Thresholded, NMS-merged detections with normalized xywh boxes, optionally pooling hflip TTA."""
     variants = [image]
     if hflip:
         variants.append(image.transpose(Image.Transpose.FLIP_LEFT_RIGHT))

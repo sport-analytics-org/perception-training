@@ -28,6 +28,7 @@ class CourtDetector(nn.Module):
         self.model = build_model_from_config(config)
         if pretrained:
             load_pretrain_weights(self.model, config)
+        # build_criterion_from_config requires a TrainConfig but only reads loss weights, never the paths
         train_config = TrainConfig(dataset_dir=".", output_dir=".")
         self.criterion, self.postprocess = build_criterion_from_config(config, train_config)
 

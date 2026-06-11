@@ -17,9 +17,9 @@ class Prediction(TypedDict):
 def predict(
     model: nn.Module,
     images: Float[Tensor, "B 3 H W"],
-    scales: tuple[float, ...],
     mask_names: tuple[str, ...],
     keypoint_names: tuple[str, ...],
+    scales: tuple[float, ...] = (1.0,),
 ) -> Prediction:
     output_size = images.shape[-2:]
     masks_by_scale = []

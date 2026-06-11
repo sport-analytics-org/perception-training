@@ -86,9 +86,9 @@ class CourtSegmenter(nn.Module):
     def predict(
         self,
         images: Float[Tensor, "B 3 H W"],
-        scales: tuple[float, ...],
+        scales: tuple[float, ...] = (1.0,),
     ) -> inference.Prediction:
-        return inference.predict(self, images, scales, self.mask_names, self.keypoint_names)
+        return inference.predict(self, images, self.mask_names, self.keypoint_names, scales)
 
     @property
     def device(self) -> torch.device:

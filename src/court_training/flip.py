@@ -26,7 +26,7 @@ class HorizontalFlip:
             masks=sample.get("mask"),
             keypoints=sample.get("keypoints"),
             visibility=sample.get("visibility"),
-            boxes_cxcywh=sample.get("boxes_cxcywh"),
+            boxes_xywh=sample.get("boxes_xywh"),
             mask_names=self.mask_names,
             keypoint_names=self.keypoint_names,
         )
@@ -36,8 +36,8 @@ class HorizontalFlip:
         if "keypoints" in sample:
             output["keypoints"] = flipped["keypoints"]
             output["visibility"] = flipped["visibility"]
-        if "boxes_cxcywh" in sample:
-            output["boxes_cxcywh"] = flipped["boxes_cxcywh"]
+        if "boxes_xywh" in sample:
+            output["boxes_xywh"] = flipped["boxes_xywh"]
             output["labels"] = sample["labels"]
         return output
 
@@ -47,7 +47,7 @@ def flip_numpy(
     masks: Float[np.ndarray, "... H W N"] | None = None,
     keypoints: Float[np.ndarray, "... K 2"] | None = None,
     visibility: Float[np.ndarray, "... K"] | None = None,
-    boxes_cxcywh: Float[np.ndarray, "... D 4"] | None = None,
+    boxes_xywh: Float[np.ndarray, "... D 4"] | None = None,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
 ) -> dict[str, np.ndarray]:
@@ -63,10 +63,10 @@ def flip_numpy(
         output["keypoints"] = np.take(keypoints, flip_indices(keypoint_names), axis=-2)
     if visibility is not None:
         output["visibility"] = np.take(visibility, flip_indices(keypoint_names), axis=-1)
-    if boxes_cxcywh is not None:
-        boxes_cxcywh = boxes_cxcywh.copy()
-        boxes_cxcywh[..., 0] = 1 - boxes_cxcywh[..., 0]
-        output["boxes_cxcywh"] = boxes_cxcywh
+    if boxes_xywh is not None:
+        boxes_xywh = boxes_xywh.copy()
+        boxes_xywh[..., 0] = 1 - boxes_xywh[..., 0] - boxes_xywh[..., 2]
+        output["boxes_xywh"] = boxes_xywh
     return output
 
 
@@ -75,6 +75,7 @@ def flip_torch(
     masks: Float[Tensor, "... N H W"] | None = None,
     keypoints: Float[Tensor, "... K 2"] | None = None,
     visibility: Float[Tensor, "... K"] | None = None,
+    boxes_xywh: Float[Tensor, "... D 4"] | None = None,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
 ) -> dict[str, Tensor]:
@@ -90,6 +91,9 @@ def flip_torch(
         output["keypoints"] = keypoints[..., flip_indices(keypoint_names), :]
     if visibility is not None:
         output["visibility"] = visibility[..., flip_indices(keypoint_names)]
+    if boxes_xywh is not None:
+        x, y, w, h = boxes_xywh.unbind(-1)
+        output["boxes_xywh"] = torch.stack([1 - x - w, y, w, h], dim=-1)
     return output
 
 

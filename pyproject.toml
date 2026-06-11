@@ -11,6 +11,7 @@ dependencies = [
     "numpy>=2.2.0",
     "opencv-python-headless==4.13.0.92",
     "pillow>=12.0.0",
+    "rfdetr[train]>=1.7.1",
     "sport-analytics",
     "timm>=1.0.27",
     "torch>=2.4",

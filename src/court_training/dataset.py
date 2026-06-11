@@ -16,10 +16,6 @@ from court_training.constants import IMAGE_MEAN, IMAGE_STD
 BASKETBALL_MASK_NAMES = tuple(NbaCourt.areas())
 BASKETBALL_KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
 BASKETBALL_DETECTION_CLASSES = ("ball", "player", "number", "referee", "rim")
-CATEGORY_ALIASES = {
-    "basketball": "ball",
-    "hoop": "rim",
-}
 
 
 class NumpySample(TypedDict):
@@ -44,8 +40,8 @@ class CourtDataset(Dataset):
     """Images from a flat export with any combination of masks, keypoints, and boxes.
 
     Every modality is enabled by a boolean; box labels index into BASKETBALL_DETECTION_CLASSES.
-    Images missing an enabled annotation are skipped; with boxes enabled, images without any
-    box are dropped.
+    Every image must have each enabled annotation; with boxes enabled, images without any box
+    are dropped.
     """
 
     def __init__(
@@ -64,18 +60,11 @@ class CourtDataset(Dataset):
         self.transform = transform
 
         image_paths = sorted((root / "images").glob("*.jpg"))
-        if load_masks:
-            image_paths = [path for path in image_paths if annotation_path(root, path, "masks", ".webp").is_file()]
-        if load_keypoints:
-            image_paths = [path for path in image_paths if annotation_path(root, path, "keypoints", ".json").is_file()]
         self.boxes = None
         if load_bbox:
             self.boxes = {}
             for path in image_paths:
-                detection_path = annotation_path(root, path, "detections", ".npz")
-                if not detection_path.is_file():
-                    continue
-                boxes_cxcywh, labels = encode_boxes(*read_detections(detection_path))
+                boxes_cxcywh, labels = encode_boxes(*read_detections(annotation_path(root, path, "detections", ".npz")))
                 if len(labels):
                     self.boxes[path] = (boxes_cxcywh, labels)
             image_paths = [path for path in image_paths if path in self.boxes]
@@ -125,15 +114,6 @@ def annotation_path(root: Path, image_path: Path, annotation_dir: str, suffix: s
     return root / annotation_dir / image_path.with_suffix(suffix).name
 
 
-def image_annotation_pairs(root: Path, annotation_dir: str, suffix: str) -> list[tuple[Path, Path]]:
-    pairs = []
-    for image_path in sorted((root / "images").glob("*.jpg")):
-        candidate = annotation_path(root, image_path, annotation_dir, suffix)
-        if candidate.is_file():
-            pairs.append((image_path, candidate))
-    return pairs
-
-
 def read_mask(path: Path, image_size: tuple[int, int]) -> Float[np.ndarray, "H W N"]:
     height, width = image_size
     bitfield = Image.open(path).convert("L").resize((width, height), Image.Resampling.NEAREST)
@@ -166,11 +146,9 @@ def encode_boxes(
     boxes = []
     labels = []
     for box, name in zip(boxes_xywh, category_names, strict=True):
+        if name not in BASKETBALL_DETECTION_CLASSES:
+            raise ValueError(f"Unknown detection class: {name}")
         x, y, width, height = box.tolist()
         boxes.append([x + width / 2, y + height / 2, width, height])
-        labels.append(BASKETBALL_DETECTION_CLASSES.index(canonical_category(name)))
+        labels.append(BASKETBALL_DETECTION_CLASSES.index(name))
     return np.array(boxes, dtype=np.float32).reshape(-1, 4), np.array(labels, dtype=np.int64)
-
-
-def canonical_category(name: str) -> str:
-    return CATEGORY_ALIASES.get(name, name)

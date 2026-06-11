@@ -23,14 +23,15 @@ class DetectionSample:
 
 
 def load_split(root: Path) -> list[DetectionSample]:
-    pairs = dataset.image_annotation_pairs(root, "detections", ".npz")
-    if not pairs:
-        raise ValueError(f"No image/detection pairs found under {root}")
+    image_paths = sorted((root / "images").glob("*.jpg"))
+    if not image_paths:
+        raise ValueError(f"No images found under {root}")
     samples = []
-    for image_path, detection_path in pairs:
-        boxes_xywh, category_names = dataset.read_detections(detection_path)
-        canonical_names = tuple(dataset.canonical_category(name) for name in category_names)
-        samples.append(DetectionSample(image_path=image_path, boxes_xywh=boxes_xywh, category_names=canonical_names))
+    for image_path in image_paths:
+        boxes_xywh, category_names = dataset.read_detections(
+            dataset.annotation_path(root, image_path, "detections", ".npz")
+        )
+        samples.append(DetectionSample(image_path=image_path, boxes_xywh=boxes_xywh, category_names=category_names))
     return samples
 
 

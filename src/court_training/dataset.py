@@ -36,6 +36,11 @@ class TorchSample(TypedDict):
     labels: NotRequired[Int64[Tensor, "D"]]
 
 
+class Target(TypedDict):
+    boxes_xywh: Float[Tensor, "D 4"]
+    labels: Int64[Tensor, "D"]
+
+
 class CourtDataset(Dataset):
     """Images from a flat export with any combination of masks, keypoints, and boxes.
 
@@ -112,6 +117,13 @@ class CourtDataset(Dataset):
             sample["boxes_xywh"] = boxes_xywh
             sample["labels"] = labels
         return sample
+
+
+def collate(batch: list[TorchSample]) -> tuple[Float[Tensor, "B 3 H W"], list[Target]]:
+    """Detection batches stay ragged: stacked images plus per-image box targets."""
+    images = torch.stack([sample["image"] for sample in batch])
+    targets: list[Target] = [{"boxes_xywh": sample["boxes_xywh"], "labels": sample["labels"]} for sample in batch]
+    return images, targets
 
 
 def annotation_path(root: Path, image_path: Path, annotation_dir: str, suffix: str) -> Path:

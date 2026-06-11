@@ -1,8 +1,7 @@
 from types import SimpleNamespace
-from typing import TypedDict
 
 import torch
-from jaxtyping import Float, Int64
+from jaxtyping import Float
 from rfdetr.config import RFDETRLargeConfig, TrainConfig
 from rfdetr.models.lwdetr import build_criterion_from_config, build_model_from_config
 from rfdetr.models.weights import load_pretrain_weights
@@ -13,13 +12,6 @@ from court_training import dataset
 
 LR_VIT_LAYER_DECAY = 0.8
 LR_COMPONENT_DECAY = 0.7
-
-
-class Target(TypedDict):
-    """Criterion contract: normalized cxcywh boxes, the one place that format is required."""
-
-    boxes: Float[Tensor, "D 4"]
-    labels: Int64[Tensor, "D"]
 
 
 class CourtDetector(nn.Module):
@@ -42,8 +34,12 @@ class CourtDetector(nn.Module):
     def forward(self, images: Float[Tensor, "B 3 H W"]) -> dict:
         return self.model(images)
 
-    def loss(self, outputs: dict, targets: list[Target]) -> Tensor:
-        losses = self.criterion(outputs, targets)
+    def loss(self, outputs: dict, targets: list[dataset.Target]) -> Tensor:
+        criterion_targets = []
+        for target in targets:
+            boxes_cxcywh = box_convert(target["boxes_xywh"], "xywh", "cxcywh")
+            criterion_targets.append({"boxes": boxes_cxcywh, "labels": target["labels"]})
+        losses = self.criterion(outputs, criterion_targets)
         weights = self.criterion.weight_dict
         return sum(losses[name] * weights[name] for name in losses if name in weights)
 
@@ -90,12 +86,3 @@ class CourtDetector(nn.Module):
     @property
     def device(self) -> torch.device:
         return next(self.parameters()).device
-
-
-def collate(batch: list[dataset.TorchSample]) -> tuple[Float[Tensor, "B 3 H W"], list[Target]]:
-    images = torch.stack([sample["image"] for sample in batch])
-    targets: list[Target] = []
-    for sample in batch:
-        boxes_cxcywh = box_convert(sample["boxes_xywh"], "xywh", "cxcywh")
-        targets.append({"boxes": boxes_cxcywh, "labels": sample["labels"]})
-    return images, targets

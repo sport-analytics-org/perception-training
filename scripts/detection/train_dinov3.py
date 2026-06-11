@@ -14,7 +14,13 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from court_training.constants import IMAGE_MEAN, IMAGE_STD
-from court_training.detection.data import BASKETBALL_DETECTION_CLASSES, class_id, load_split
+from court_training.detection.data import (
+    BASKETBALL_DETECTION_CLASSES,
+    canonical_classes,
+    class_id,
+    load_split,
+    parse_classes,
+)
 from court_training.detection.model import DinoDetector
 
 app = typer.Typer(help="Fine-tune a DINOv3-backbone detector on exported basketball detections.")
@@ -35,7 +41,8 @@ class DetectionDataset(Dataset):
     ) -> None:
         self.samples = load_split(root)
         self.image_size = image_size
-        self.class_names = class_names
+        self.class_names = canonical_classes(class_names)
+        self.selected_classes = set(self.class_names)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -47,10 +54,17 @@ class DetectionDataset(Dataset):
         image_array = np.array(image, dtype=np.float32) / 255.0
         image_tensor = torch.from_numpy(image_array).permute(2, 0, 1)
         image_tensor = (image_tensor - IMAGE_MEAN) / IMAGE_STD
-        labels = [class_id(name, self.class_names) for name in sample.category_names]
+        boxes = []
+        labels = []
+        for box, name in zip(sample.boxes_xywh, sample.category_names, strict=True):
+            if name not in self.selected_classes:
+                continue
+            boxes.append(box)
+            labels.append(class_id(name, self.class_names))
+        boxes_xywh = np.array(boxes, dtype=np.float32).reshape((-1, 4))
         return {
             "image": image_tensor,
-            "boxes_xywh": torch.tensor(sample.boxes_xywh, dtype=torch.float32),
+            "boxes_xywh": torch.tensor(boxes_xywh, dtype=torch.float32),
             "labels": torch.tensor(labels, dtype=torch.long),
         }
 
@@ -69,14 +83,16 @@ def main(
     image_width: int = typer.Option(448, help="Training image width."),
     num_queries: int = typer.Option(64, help="Object queries."),
     seed: int = typer.Option(79, help="Random seed."),
+    classes: str | None = typer.Option(None, help="Comma-separated class names to train and evaluate."),
 ) -> None:
     set_seed(seed)
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     image_size = (image_height, image_width)
+    class_names = parse_classes(classes)
 
-    train_data = DetectionDataset(train_root.expanduser().resolve(), image_size)
-    val_data = DetectionDataset(val_root.expanduser().resolve(), image_size)
+    train_data = DetectionDataset(train_root.expanduser().resolve(), image_size, class_names)
+    val_data = DetectionDataset(val_root.expanduser().resolve(), image_size, class_names)
     train_loader = DataLoader(
         train_data,
         batch_size=batch_size,
@@ -94,7 +110,7 @@ def main(
 
     device = training_device()
     model = DinoDetector(
-        num_classes=len(BASKETBALL_DETECTION_CLASSES),
+        num_classes=len(class_names),
         num_queries=num_queries,
         backbone=backbone,
     ).to(device)
@@ -105,7 +121,7 @@ def main(
     best_map50 = 0.0
     for epoch in range(1, epochs + 1):
         train_loss = train_epoch(model, train_loader, optimizer, device)
-        metrics = evaluate(model, val_loader, device)
+        metrics = evaluate(model, val_loader, device, len(class_names))
         logger.info("Epoch {}/{} train_loss={:.4f}", epoch, epochs, train_loss)
         logger.info("Eval AP50={:.4f} class_ap50={}", metrics.map50, format_scores(metrics.class_ap50))
         if metrics.map50 >= best_map50:
@@ -183,10 +199,15 @@ def greedy_matches(
 
 
 @torch.inference_mode()
-def evaluate(model: DinoDetector, loader: DataLoader, device: torch.device) -> DetectionMetrics:
+def evaluate(
+    model: DinoDetector,
+    loader: DataLoader,
+    device: torch.device,
+    num_classes: int,
+) -> DetectionMetrics:
     model.eval()
-    predictions_by_class = {index: [] for index in range(len(BASKETBALL_DETECTION_CLASSES))}
-    targets_by_class = {index: {} for index in range(len(BASKETBALL_DETECTION_CLASSES))}
+    predictions_by_class = {index: [] for index in range(num_classes)}
+    targets_by_class = {index: {} for index in range(num_classes)}
     image_offset = 0
     for batch in tqdm(loader, desc="Evaluating", leave=False):
         batch = to_device(batch, device)
@@ -207,7 +228,7 @@ def evaluate(model: DinoDetector, loader: DataLoader, device: torch.device) -> D
         image_offset += batch["image"].shape[0]
 
     ap50 = []
-    for class_index in range(len(BASKETBALL_DETECTION_CLASSES)):
+    for class_index in range(num_classes):
         ap50.append(average_precision_50(predictions_by_class[class_index], targets_by_class[class_index]))
     valid_ap50 = [score for score in ap50 if not np.isnan(score)]
     return DetectionMetrics(map50=float(np.mean(valid_ap50)), class_ap50=tuple(ap50))

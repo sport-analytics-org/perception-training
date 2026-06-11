@@ -2,7 +2,7 @@ from pathlib import Path
 
 import typer
 
-from court_training.detection.data import write_coco_dataset
+from court_training.detection.data import parse_classes, write_coco_dataset
 
 app = typer.Typer(help="Fine-tune an RF-DETR detector on exported basketball detections.")
 
@@ -22,6 +22,7 @@ def main(
         "--fused-optimizer/--no-fused-optimizer",
         help="Use RF-DETR's fused AdamW optimizer when supported.",
     ),
+    classes: str | None = typer.Option(None, help="Comma-separated class names to train and evaluate."),
 ) -> None:
     try:
         from rfdetr import RFDETRBase
@@ -33,6 +34,7 @@ def main(
         train_root.expanduser().resolve(),
         val_root.expanduser().resolve(),
         output_dir / "dataset-coco",
+        class_names=parse_classes(classes),
     )
     model = RFDETRBase(fused_optimizer=fused_optimizer)
     model.train(

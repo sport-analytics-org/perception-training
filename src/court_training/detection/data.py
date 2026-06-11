@@ -69,15 +69,41 @@ def write_coco_dataset(
     val_root: Path,
     output_root: Path,
     class_names: tuple[str, ...] = BASKETBALL_DETECTION_CLASSES,
+    train_max_samples: int = 0,
+    val_max_samples: int = 0,
+    sample_seed: int = 42,
+    train_box_scales: dict[str, float] | None = None,
 ) -> Path:
     class_names = canonical_classes(class_names)
-    write_coco_split(load_split(train_root), output_root / "train", class_names)
-    write_coco_split(load_split(val_root), output_root / "valid", class_names)
-    write_coco_split(load_split(val_root), output_root / "test", class_names)
+    train_samples = select_samples(load_split(train_root), class_names, train_max_samples, sample_seed)
+    val_samples = select_samples(load_split(val_root), class_names, val_max_samples, sample_seed)
+    write_coco_split(train_samples, output_root / "train", class_names, box_scales=train_box_scales)
+    write_coco_split(val_samples, output_root / "valid", class_names)
+    write_coco_split(val_samples, output_root / "test", class_names)
     return output_root
 
 
-def write_coco_split(samples: list[DetectionSample], output_root: Path, class_names: tuple[str, ...]) -> None:
+def select_samples(
+    samples: list[DetectionSample],
+    class_names: tuple[str, ...],
+    max_samples: int,
+    seed: int,
+) -> list[DetectionSample]:
+    class_set = set(class_names)
+    filtered = [sample for sample in samples if class_set.intersection(sample.category_names)]
+    if max_samples <= 0 or len(filtered) <= max_samples:
+        return filtered
+    rng = np.random.default_rng(seed)
+    indexes = sorted(rng.choice(len(filtered), size=max_samples, replace=False).tolist())
+    return [filtered[index] for index in indexes]
+
+
+def write_coco_split(
+    samples: list[DetectionSample],
+    output_root: Path,
+    class_names: tuple[str, ...],
+    box_scales: dict[str, float] | None = None,
+) -> None:
     output_root.mkdir(parents=True, exist_ok=True)
     images = []
     annotations = []
@@ -93,7 +119,11 @@ def write_coco_split(samples: list[DetectionSample], output_root: Path, class_na
             category_id = category_ids.get(category_name)
             if category_id is None:
                 continue
-            x, y, box_width, box_height = box_to_pixels(box, width, height)
+            x, y, box_width, box_height = box_to_pixels(
+                scale_box(box, box_scales.get(category_name, 1.0) if box_scales else 1.0),
+                width,
+                height,
+            )
             annotation = {
                 "id": annotation_id,
                 "image_id": image_id,
@@ -107,6 +137,17 @@ def write_coco_split(samples: list[DetectionSample], output_root: Path, class_na
     categories = [{"id": index + 1, "name": name} for index, name in enumerate(class_names)]
     coco = {"images": images, "annotations": annotations, "categories": categories}
     (output_root / "_annotations.coco.json").write_text(json.dumps(coco))
+
+
+def scale_box(box: np.ndarray, scale: float) -> np.ndarray:
+    if scale == 1.0:
+        return box
+    x, y, box_width, box_height = box.tolist()
+    scaled_width = min(box_width * scale, 1.0)
+    scaled_height = min(box_height * scale, 1.0)
+    scaled_x = min(max(x - (scaled_width - box_width) / 2, 0.0), 1.0 - scaled_width)
+    scaled_y = min(max(y - (scaled_height - box_height) / 2, 0.0), 1.0 - scaled_height)
+    return np.array([scaled_x, scaled_y, scaled_width, scaled_height], dtype=np.float32)
 
 
 def box_to_pixels(box: np.ndarray, width: int, height: int) -> tuple[float, float, float, float]:

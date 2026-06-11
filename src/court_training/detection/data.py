@@ -18,8 +18,8 @@ class Target(TypedDict):
 @dataclass(frozen=True)
 class DetectionSample:
     image_path: Path
-    boxes_cxcywh: np.ndarray
-    labels: np.ndarray
+    boxes_cxcywh: Float[np.ndarray, "D 4"]
+    labels: Int64[np.ndarray, "D"]
 
 
 def load_split(root: Path) -> list[DetectionSample]:

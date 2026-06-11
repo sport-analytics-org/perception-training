@@ -19,6 +19,7 @@ from court_training.detection.data import (
     canonical_classes,
     class_id,
     load_split,
+    normalized_xywh_to_center,
     parse_classes,
 )
 from court_training.detection.model import DinoDetector
@@ -59,7 +60,7 @@ class DetectionDataset(Dataset):
         for box, name in zip(sample.boxes_xywh, sample.category_names, strict=True):
             if name not in self.selected_classes:
                 continue
-            boxes.append(box)
+            boxes.append(normalized_xywh_to_center(box))
             labels.append(class_id(name, self.class_names))
         boxes_xywh = np.array(boxes, dtype=np.float32).reshape((-1, 4))
         return {

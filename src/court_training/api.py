@@ -12,12 +12,15 @@ import torch
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
 from sportanalytics import NbaCourt
+from sportanalytics.court.basket import BasketCourt
 
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
 from court_training.dataset import BASKETBALL_DETECTION_CLASSES
 from court_training.detection import inference as detection_inference
 from court_training.detection.model import CourtDetector
+from court_training.homography import find_keypoints_homography, fit_homography
 from court_training.segmentation.model import CourtSegmenter
+from court_training.warp import warp
 
 IMAGE_SIZE = (360, 480)
 MASK_NAMES = tuple(NbaCourt.areas())
@@ -124,20 +127,19 @@ def predict_segmentation(
     with torch.inference_mode():
         prediction = model.predict(tensor, TTA_SCALES)
 
-    probabilities = prediction["masks"][0].sigmoid().cpu().numpy()
+    probabilities = prediction["masks"][0].sigmoid().cpu()
     keypoints = prediction["keypoints"][0].cpu().numpy()
     visibility = prediction["visibility"][0].sigmoid().cpu().numpy()
 
     return {
-        "width": IMAGE_SIZE[1],
-        "height": IMAGE_SIZE[0],
+        "homography": fit_nba_homography(probabilities, keypoints, visibility),
         "masks": [
             {
                 "name": name,
                 "score": float(mask.mean()),
                 "png": encode_mask_png(mask >= threshold),
             }
-            for name, mask in zip(MASK_NAMES, probabilities, strict=True)
+            for name, mask in zip(MASK_NAMES, probabilities.numpy(), strict=True)
         ],
         "keypoints": [
             {
@@ -150,6 +152,67 @@ def predict_segmentation(
             for name, point, score in zip(KEYPOINT_NAMES, keypoints, visibility, strict=True)
         ],
     }
+
+
+def fit_nba_homography(
+    probabilities: torch.Tensor,
+    keypoints: np.ndarray,
+    visibility: np.ndarray,
+) -> dict[str, object]:
+    visible = visibility >= 0.5
+    if visible.sum() < 4:
+        return {
+            "available": False,
+            "reason": f"Need at least 4 visible keypoints, got {int(visible.sum())}",
+        }
+
+    source_masks = template_masks(NbaCourt, MASK_NAMES, probabilities.shape[-1], probabilities.device)
+    source_keypoints = normalized_keypoints(NbaCourt)
+    initial = torch.tensor(
+        find_keypoints_homography(source_keypoints[visible], keypoints[visible]),
+        dtype=probabilities.dtype,
+        device=probabilities.device,
+    )
+    multipliers = torch.tensor(
+        [1.5 if "3pt_area" in name or "painted_area" in name else 1.0 for name in MASK_NAMES],
+        dtype=probabilities.dtype,
+        device=probabilities.device,
+    )
+    matrix = fit_homography(source_masks, probabilities, initial, multipliers)
+    fitted = warp(source_masks, matrix, probabilities.shape[-2:])
+    return {
+        "available": True,
+        "court": "nba",
+        "matrix": matrix.cpu().tolist(),
+        "soft_iou": soft_iou(fitted, probabilities),
+    }
+
+
+def normalized_keypoints(court: BasketCourt) -> np.ndarray:
+    points_by_name = court.keypoints()
+    points = np.array([points_by_name[name] for name in KEYPOINT_NAMES], dtype=np.float64)
+    x = (points[:, 0] + court.half_length) / court.length
+    y = (points[:, 1] + court.half_width) / court.width
+    return np.stack([x, y], axis=1)
+
+
+def template_masks(
+    court: BasketCourt,
+    labels: tuple[str, ...],
+    width: int,
+    device: torch.device,
+) -> torch.Tensor:
+    masks = []
+    for label in labels:
+        image = court.get_mask_image(label, width).convert("L")
+        masks.append(torch.tensor(np.asarray(image, dtype=np.float32) / 255, device=device))
+    return torch.stack(masks)
+
+
+def soft_iou(predicted: torch.Tensor, target: torch.Tensor) -> float:
+    intersection = torch.minimum(predicted, target).sum(dim=(1, 2))
+    union = torch.maximum(predicted, target).sum(dim=(1, 2)).clamp_min(1e-6)
+    return float((intersection / union).mean().item())
 
 
 def predict_detections(

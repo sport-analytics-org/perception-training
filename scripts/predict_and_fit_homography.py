@@ -104,8 +104,8 @@ def main(
             dtype=probabilities.dtype,
         )
         homography = fit_homography(source_masks, probabilities, initial, multipliers)
-        homography_tensor = torch.tensor(homography, dtype=source_masks.dtype, device=source_masks.device)
-        fitted = warp(source_masks, homography_tensor, probabilities.shape[-2:])
+        fitted = warp(source_masks, homography, probabilities.shape[-2:])
+        homography = homography.cpu().numpy()
         fitted_original = render_at_image_size(court, homography, original_image.size)
         fitted_keypoints, fitted_visibility = project_keypoints(court, homography)
         score = soft_iou(fitted, probabilities)

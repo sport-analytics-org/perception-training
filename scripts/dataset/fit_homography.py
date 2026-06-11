@@ -39,6 +39,7 @@ def main(
     multipliers = torch.tensor(mask_multipliers)
     initial = torch.tensor(centered_homography(), dtype=target_masks.dtype)
     homography = fit_homography(source_masks, target_masks, initial, multipliers)
+    homography = homography.numpy()
 
     initial_metrics = iou_metrics(source_masks, target_masks, initial.numpy())
     final_metrics = iou_metrics(source_masks, target_masks, homography)

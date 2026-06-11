@@ -16,7 +16,7 @@ def fit_homography(
     target_masks: Float[Tensor, "... N H W"],
     initial_homography: Float[Tensor, "... 3 3"],
     multipliers: Float[Tensor, "*N"] | None = None,
-) -> Float[np.ndarray, "... 3 3"]:
+) -> Float[Tensor, "... 3 3"]:
     if source_masks.shape[-3] != target_masks.shape[-3]:
         raise ValueError(f"Got {source_masks.shape[-3]} source masks and {target_masks.shape[-3]} target masks")
 
@@ -38,8 +38,7 @@ def fit_homography(
         return loss
 
     optimizer.step(closure)
-    homography = multiply_hom(initial, params.detach()).cpu().numpy()
-    return homography
+    return multiply_hom(initial, params.detach())
 
 
 def find_keypoints_homography(

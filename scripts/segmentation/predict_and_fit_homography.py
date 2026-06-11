@@ -14,11 +14,8 @@ from sportanalytics.court.basket import BasketCourt
 from torch import Tensor
 from tqdm import tqdm
 
+from court_training import homography
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
-from court_training.homography import (
-    find_keypoints_homography,
-    fit_homography,
-)
 from court_training.segmentation.model import CourtSegmenter
 from court_training.warp import warp
 
@@ -89,7 +86,7 @@ def main(
 
         court_name = "fiba" if dataset == "borgo" else "nba"
         court = FibaCourt if dataset == "borgo" else NbaCourt
-        source_masks = template_masks(court, MASK_NAMES, probabilities.shape[-1], probabilities.device)
+        source_masks = homography.template_masks(court, MASK_NAMES, probabilities.shape[-1], probabilities.device)
         multipliers = torch.tensor(
             [1.5 if "3pt_area" in name or "painted_area" in name else 1.0 for name in MASK_NAMES],
             device=probabilities.device,
@@ -98,24 +95,24 @@ def main(
         if visible.sum() < 4:
             logger.info("Skipping {}: only {} visible keypoints", image_path, visible.sum())
             continue
-        source_keypoints = normalized_keypoints(court)
+        source_keypoints = homography.normalized_keypoints(court, KEYPOINT_NAMES)
         initial = torch.tensor(
-            find_keypoints_homography(source_keypoints[visible], keypoints[visible]),
+            homography.find_keypoints_homography(source_keypoints[visible], keypoints[visible]),
             dtype=probabilities.dtype,
         )
-        homography = fit_homography(source_masks, probabilities, initial, multipliers)
-        fitted = warp(source_masks, homography, probabilities.shape[-2:])
-        homography = homography.cpu().numpy()
-        fitted_original = render_at_image_size(court, homography, original_image.size)
-        fitted_keypoints, fitted_visibility = project_keypoints(court, homography)
-        score = soft_iou(fitted, probabilities)
+        fitted_homography = homography.fit_homography(source_masks, probabilities, initial, multipliers)
+        fitted = warp(source_masks, fitted_homography, probabilities.shape[-2:])
+        fitted_homography = fitted_homography.cpu().numpy()
+        fitted_original = render_at_image_size(court, fitted_homography, original_image.size)
+        fitted_keypoints, fitted_visibility = project_keypoints(court, fitted_homography)
+        score = homography.soft_iou(fitted, probabilities)
 
         save_labels(
             dataset_root,
             image_path,
             court_name,
             fitted_original,
-            homography,
+            fitted_homography,
             fitted_keypoints,
             fitted_visibility,
             score,
@@ -184,45 +181,24 @@ def prediction_device() -> torch.device:
     return torch.device("cpu")
 
 
-def normalized_keypoints(court: BasketCourt) -> Float[np.ndarray, "K 2"]:
-    points_by_name = court.keypoints()
-    points = np.array([points_by_name[name] for name in KEYPOINT_NAMES], dtype=np.float64)
-    x = (points[:, 0] + court.half_length) / court.length
-    y = (points[:, 1] + court.half_width) / court.width
-    return np.stack([x, y], axis=1)
-
-
-def template_masks(
-    court: BasketCourt,
-    labels: tuple[str, ...],
-    width: int,
-    device: torch.device,
-) -> Float[Tensor, "N H W"]:
-    masks = []
-    for label in labels:
-        image = court.get_mask_image(label, width).convert("L")
-        masks.append(torch.tensor(np.asarray(image, dtype=np.float32) / 255, device=device))
-    return torch.stack(masks)
-
-
 def render_at_image_size(
     court: BasketCourt,
-    homography: Float[np.ndarray, "3 3"],
+    matrix: Float[np.ndarray, "3 3"],
     size: tuple[int, int],
 ) -> Float[Tensor, "N H W"]:
     width, height = size
-    source_masks = template_masks(court, MASK_NAMES, width, torch.device("cpu"))
-    homography_tensor = torch.tensor(homography, dtype=source_masks.dtype)
+    source_masks = homography.template_masks(court, MASK_NAMES, width, torch.device("cpu"))
+    homography_tensor = torch.tensor(matrix, dtype=source_masks.dtype)
     return warp(source_masks, homography_tensor, (height, width))
 
 
 def project_keypoints(
     court: BasketCourt,
-    homography: Float[np.ndarray, "3 3"],
+    matrix: Float[np.ndarray, "3 3"],
 ) -> tuple[Float[np.ndarray, "K 2"], Bool[np.ndarray, "K"]]:
-    points = normalized_keypoints(court)
+    points = homography.normalized_keypoints(court, KEYPOINT_NAMES)
     homogeneous = np.concatenate([points, np.ones((len(points), 1))], axis=1)
-    projected = homogeneous @ homography.T
+    projected = homogeneous @ matrix.T
     keypoints = projected[:, :2] / projected[:, 2:]
     visibility = np.logical_and.reduce(
         [
@@ -285,12 +261,6 @@ def update_json(path: Path, key: str, image_key: str, value: dict) -> None:
     data = json.loads(path.read_text()) if path.is_file() else {key: {}}
     data[key][image_key] = value
     path.write_text(json.dumps(data, indent=2) + "\n")
-
-
-def soft_iou(predicted: Float[Tensor, "N H W"], target: Float[Tensor, "N H W"]) -> float:
-    intersection = torch.minimum(predicted, target).sum(dim=(1, 2))
-    union = torch.maximum(predicted, target).sum(dim=(1, 2)).clamp_min(1e-6)
-    return float((intersection / union).mean())
 
 
 def make_panel(

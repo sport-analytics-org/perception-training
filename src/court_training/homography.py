@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import torch
 from jaxtyping import Float
+from sportanalytics.court.basket import BasketCourt
 from torch import Tensor
 
 from court_training.segmentation.loss import dice_loss
@@ -63,6 +64,33 @@ def find_keypoints_homography(
 
 def centered_homography() -> Float[np.ndarray, "3 3"]:
     return find_keypoints_homography(CENTERED_SOURCE, CENTERED_TARGET)
+
+
+def normalized_keypoints(court: BasketCourt, labels: tuple[str, ...]) -> Float[np.ndarray, "K 2"]:
+    points_by_name = court.keypoints()
+    points = np.array([points_by_name[name] for name in labels], dtype=np.float64)
+    x = (points[:, 0] + court.half_length) / court.length
+    y = (points[:, 1] + court.half_width) / court.width
+    return np.stack([x, y], axis=1)
+
+
+def template_masks(
+    court: BasketCourt,
+    labels: tuple[str, ...],
+    width: int,
+    device: torch.device,
+) -> Float[Tensor, "N H W"]:
+    masks = []
+    for label in labels:
+        image = court.get_mask_image(label, width).convert("L")
+        masks.append(torch.tensor(np.asarray(image, dtype=np.float32) / 255, device=device))
+    return torch.stack(masks)
+
+
+def soft_iou(predicted: Float[Tensor, "N H W"], target: Float[Tensor, "N H W"]) -> float:
+    intersection = torch.minimum(predicted, target).sum(dim=(1, 2))
+    union = torch.maximum(predicted, target).sum(dim=(1, 2)).clamp_min(1e-6)
+    return float((intersection / union).mean().item())
 
 
 def area_weights(

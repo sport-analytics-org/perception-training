@@ -12,15 +12,13 @@ import torch
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
 from sportanalytics import NbaCourt
-from sportanalytics.court.basket import BasketCourt
 
+from court_training import homography, warp
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
 from court_training.dataset import BASKETBALL_DETECTION_CLASSES
 from court_training.detection import inference as detection_inference
 from court_training.detection.model import CourtDetector
-from court_training.homography import find_keypoints_homography, fit_homography
 from court_training.segmentation.model import CourtSegmenter
-from court_training.warp import warp
 
 IMAGE_SIZE = (360, 480)
 MASK_NAMES = tuple(NbaCourt.areas())
@@ -166,10 +164,10 @@ def fit_nba_homography(
             "reason": f"Need at least 4 visible keypoints, got {int(visible.sum())}",
         }
 
-    source_masks = template_masks(NbaCourt, MASK_NAMES, probabilities.shape[-1], probabilities.device)
-    source_keypoints = normalized_keypoints(NbaCourt)
+    source_masks = homography.template_masks(NbaCourt, MASK_NAMES, probabilities.shape[-1], probabilities.device)
+    source_keypoints = homography.normalized_keypoints(NbaCourt, KEYPOINT_NAMES)
     initial = torch.tensor(
-        find_keypoints_homography(source_keypoints[visible], keypoints[visible]),
+        homography.find_keypoints_homography(source_keypoints[visible], keypoints[visible]),
         dtype=probabilities.dtype,
         device=probabilities.device,
     )
@@ -178,41 +176,14 @@ def fit_nba_homography(
         dtype=probabilities.dtype,
         device=probabilities.device,
     )
-    matrix = fit_homography(source_masks, probabilities, initial, multipliers)
-    fitted = warp(source_masks, matrix, probabilities.shape[-2:])
+    matrix = homography.fit_homography(source_masks, probabilities, initial, multipliers)
+    fitted = warp.warp(source_masks, matrix, probabilities.shape[-2:])
     return {
         "available": True,
         "court": "nba",
         "matrix": matrix.cpu().tolist(),
-        "soft_iou": soft_iou(fitted, probabilities),
+        "soft_iou": homography.soft_iou(fitted, probabilities),
     }
-
-
-def normalized_keypoints(court: BasketCourt) -> np.ndarray:
-    points_by_name = court.keypoints()
-    points = np.array([points_by_name[name] for name in KEYPOINT_NAMES], dtype=np.float64)
-    x = (points[:, 0] + court.half_length) / court.length
-    y = (points[:, 1] + court.half_width) / court.width
-    return np.stack([x, y], axis=1)
-
-
-def template_masks(
-    court: BasketCourt,
-    labels: tuple[str, ...],
-    width: int,
-    device: torch.device,
-) -> torch.Tensor:
-    masks = []
-    for label in labels:
-        image = court.get_mask_image(label, width).convert("L")
-        masks.append(torch.tensor(np.asarray(image, dtype=np.float32) / 255, device=device))
-    return torch.stack(masks)
-
-
-def soft_iou(predicted: torch.Tensor, target: torch.Tensor) -> float:
-    intersection = torch.minimum(predicted, target).sum(dim=(1, 2))
-    union = torch.maximum(predicted, target).sum(dim=(1, 2)).clamp_min(1e-6)
-    return float((intersection / union).mean().item())
 
 
 def predict_detections(

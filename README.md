@@ -76,8 +76,12 @@ uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/detect
 Fine-tune RF-DETR:
 
 ```bash
-uv run python scripts/detection/train_rfdetr.py /path/to/detection-dataset/train /path/to/detection-dataset/val /path/to/runs/rfdetr --classes player
+uv run python scripts/detection/train_rfdetr.py /path/to/detection-dataset/train /path/to/detection-dataset/val /path/to/runs/rfdetr
 ```
+
+Detection training defaults to the proven square `704x704` setup. Use `--resolution 640`
+for the faster square model. Training disables RF-DETR EMA, so `checkpoint_best_total.pth`
+is the best regular-model checkpoint.
 
 ## Homography fitting
 

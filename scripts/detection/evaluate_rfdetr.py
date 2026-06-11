@@ -30,12 +30,15 @@ def main(
     val_root: Path,
     output_json: Path,
     classes: str = typer.Option(DEFAULT_CLASSES, help="Comma-separated class names to evaluate."),
-    resolution: int = typer.Option(704, help="Inference resolution."),
+    resolution: int = typer.Option(704, help="Square inference resolution."),
     hflip: bool = typer.Option(False, "--hflip/--no-hflip", help="Use horizontal-flip TTA."),
     threshold: float = typer.Option(0.001, help="Confidence threshold before NMS and COCO evaluation."),
     nms_iou: float = typer.Option(0.6, help="Per-class NMS IoU threshold after TTA merge."),
     max_detections: int = typer.Option(300, help="Maximum detections per image after NMS."),
 ) -> None:
+    if resolution <= 0:
+        raise typer.BadParameter("Resolution must be positive.")
+
     class_names = data.parse_classes(classes)
     category_ids = {name: index + 1 for index, name in enumerate(class_names)}
     samples = data.load_split(val_root.expanduser().resolve())

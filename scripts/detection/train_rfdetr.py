@@ -34,19 +34,22 @@ def main(
     val_root: Path,
     output_dir: Path,
     epochs: int = typer.Option(6, help="Training epochs."),
-    batch_size: int = typer.Option(12, help="Training batch size."),
+    batch_size: int = typer.Option(8, help="Training batch size."),
     learning_rate: float = typer.Option(1e-4, help="RF-DETR learning rate."),
     lr_encoder: float = typer.Option(1.5e-4, help="RF-DETR encoder learning rate."),
     lr_drop: int = typer.Option(5, help="Epoch for step LR decay."),
     warmup_epochs: float = typer.Option(0.5, help="Warmup epochs."),
     weight_decay: float = typer.Option(1e-4, help="Weight decay."),
     num_workers: int = typer.Option(8, help="Dataloader workers."),
-    resolution: int = typer.Option(704, help="Input resolution."),
+    resolution: int = typer.Option(704, help="Square training/inference resolution."),
     val_max_samples: int = typer.Option(800, help="Use at most this many validation images during training."),
     seed: int = typer.Option(51, help="Training seed."),
     train_box_scale: str = typer.Option("ball=1.35", help="Comma-separated class=scale training box overrides."),
     classes: str = typer.Option(DEFAULT_CLASSES, help="Comma-separated class names to train and evaluate."),
 ) -> None:
+    if resolution <= 0:
+        raise typer.BadParameter("Resolution must be positive.")
+
     output_dir = output_dir.expanduser().resolve()
     class_names = data.parse_classes(classes)
     train_box_scales = parse_box_scales(train_box_scale)
@@ -65,6 +68,8 @@ def main(
         "classes": class_names,
         "val_max_samples": val_max_samples,
         "train_box_scales": train_box_scales,
+        "resolution": resolution,
+        "use_ema": False,
     }
     (output_dir / "experiment.json").write_text(json.dumps(notes, indent=2) + "\n")
 
@@ -82,7 +87,9 @@ def main(
         weight_decay=weight_decay,
         num_workers=num_workers,
         eval_interval=1,
+        use_ema=False,
         resolution=resolution,
+        square_resize_div_64=True,
         multi_scale=False,
         expanded_scales=False,
         aug_config=COURT_AUGMENTATION,

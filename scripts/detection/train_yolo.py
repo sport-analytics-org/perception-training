@@ -17,6 +17,9 @@ def main(
     image_size: int = typer.Option(640, help="Square training image size."),
     batch_size: int = typer.Option(16, help="Training batch size."),
     classes: str | None = typer.Option(None, help="Comma-separated class names to train and evaluate."),
+    learning_rate: float | None = typer.Option(None, help="Initial YOLO learning rate."),
+    final_lr_fraction: float = typer.Option(0.01, help="Final LR as a fraction of the initial LR."),
+    patience: int = typer.Option(100, help="Early-stopping patience in epochs."),
 ) -> None:
     try:
         from ultralytics import YOLO
@@ -31,6 +34,10 @@ def main(
         class_names=parse_classes(classes),
     )
     yolo = YOLO(model)
+    train_kwargs = {}
+    if learning_rate is not None:
+        train_kwargs["lr0"] = learning_rate
+        train_kwargs["lrf"] = final_lr_fraction
     yolo.train(
         data=str(dataset_yaml),
         epochs=epochs,
@@ -38,6 +45,8 @@ def main(
         batch=batch_size,
         project=str(output_dir),
         name="yolo",
+        patience=patience,
+        **train_kwargs,
     )
 
 

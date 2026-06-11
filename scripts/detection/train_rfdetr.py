@@ -31,6 +31,8 @@ def main(
     lr_drop: int = typer.Option(100, help="Epoch for step LR decay."),
     warmup_epochs: float = typer.Option(0.0, help="Warmup epochs."),
     weight_decay: float = typer.Option(1e-4, help="Weight decay."),
+    num_workers: int = typer.Option(8, help="Dataloader workers."),
+    eval_interval: int = typer.Option(1, help="Evaluate every N epochs."),
     resolution: int = typer.Option(704, help="Input resolution. Large expects multiples of 32."),
     multi_scale: bool = typer.Option(True, "--multi-scale/--no-multi-scale", help="Use RF-DETR multi-scale training."),
     expanded_scales: bool = typer.Option(
@@ -65,6 +67,8 @@ def main(
         lr_drop=lr_drop,
         warmup_epochs=warmup_epochs,
         weight_decay=weight_decay,
+        num_workers=num_workers,
+        eval_interval=eval_interval,
         resolution=resolution,
         multi_scale=multi_scale,
         expanded_scales=expanded_scales,

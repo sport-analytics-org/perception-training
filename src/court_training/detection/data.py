@@ -1,11 +1,17 @@
-import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
 
 import numpy as np
+import torch
+from jaxtyping import Float, Int64, UInt8
 from PIL import Image
+from torch import Tensor
+from torch.utils.data import Dataset
 
 from court_training import dataset
+from court_training.constants import IMAGE_MEAN, IMAGE_STD
 
 BASKETBALL_DETECTION_CLASSES = ("ball", "player", "number", "referee", "rim")
 CATEGORY_ALIASES = {
@@ -14,11 +20,69 @@ CATEGORY_ALIASES = {
 }
 
 
+class NumpySample(TypedDict):
+    image: UInt8[np.ndarray, "H W 3"]
+    boxes_cxcywh: Float[np.ndarray, "D 4"]
+    labels: Int64[np.ndarray, " D"]
+
+
+class Target(TypedDict):
+    boxes: Float[Tensor, "D 4"]
+    labels: Int64[Tensor, " D"]
+
+
 @dataclass(frozen=True)
 class DetectionSample:
     image_path: Path
     boxes_xywh: np.ndarray
     category_names: tuple[str, ...]
+
+
+class DetectionDataset(Dataset):
+    """Square-resized images with normalized cxcywh boxes and class-index labels."""
+
+    def __init__(
+        self,
+        samples: list[DetectionSample],
+        class_names: tuple[str, ...],
+        resolution: int,
+        box_scales: dict[str, float],
+        transform: Callable[[NumpySample], NumpySample] | None = None,
+    ) -> None:
+        self.resolution = resolution
+        self.transform = transform
+        self.items = [(sample.image_path, *encode_boxes(sample, class_names, box_scales)) for sample in samples]
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, index: int) -> tuple[Float[Tensor, "3 H W"], Target]:
+        sample = self.load(index)
+        if self.transform:
+            sample = self.transform(sample)
+        image = torch.from_numpy(sample["image"].astype(np.float32) / 255.0).permute(2, 0, 1)
+        image = (image - IMAGE_MEAN) / IMAGE_STD
+        target: Target = {
+            "boxes": torch.from_numpy(sample["boxes_cxcywh"]),
+            "labels": torch.from_numpy(sample["labels"]),
+        }
+        return image, target
+
+    def load(self, index: int) -> NumpySample:
+        image_path, boxes_cxcywh, labels = self.items[index]
+        image = Image.open(image_path).convert("RGB")
+        image = image.resize((self.resolution, self.resolution), Image.Resampling.BILINEAR)
+        return {
+            "image": np.array(image, dtype=np.uint8),
+            "boxes_cxcywh": boxes_cxcywh,
+            "labels": labels,
+        }
+
+
+def collate(batch: list[tuple[Tensor, Target]]) -> tuple[Float[Tensor, "B 3 H W"], list[Target]]:
+    images = torch.stack([image for image, _ in batch])
+    targets = [target for _, target in batch]
+    return images, targets
 
 
 def load_split(root: Path) -> list[DetectionSample]:
@@ -37,6 +101,19 @@ def load_sample(image_path: Path, detection_path: Path) -> DetectionSample:
     return DetectionSample(image_path=image_path, boxes_xywh=boxes_xywh, category_names=category_names)
 
 
+def filter_by_class(samples: list[DetectionSample], class_names: tuple[str, ...]) -> list[DetectionSample]:
+    class_set = set(class_names)
+    return [sample for sample in samples if class_set.intersection(sample.category_names)]
+
+
+def subsample(samples: list[DetectionSample], max_samples: int, seed: int) -> list[DetectionSample]:
+    if max_samples <= 0 or len(samples) <= max_samples:
+        return samples
+    rng = np.random.default_rng(seed)
+    indexes = sorted(rng.choice(len(samples), size=max_samples, replace=False).tolist())
+    return [samples[index] for index in indexes]
+
+
 def parse_classes(classes: str) -> tuple[str, ...]:
     names = tuple(canonical_category(name.strip()) for name in classes.split(","))
     unknown = sorted(set(names) - set(BASKETBALL_DETECTION_CLASSES))
@@ -51,82 +128,27 @@ def canonical_category(name: str) -> str:
     return CATEGORY_ALIASES.get(name, name)
 
 
-def category_ids(class_names: tuple[str, ...]) -> dict[str, int]:
-    return {name: index + 1 for index, name in enumerate(class_names)}
-
-
-def write_coco_dataset(
-    train_root: Path,
-    val_root: Path,
-    output_root: Path,
-    class_names: tuple[str, ...],
-    val_max_samples: int,
-    seed: int,
-    train_box_scales: dict[str, float],
-) -> None:
-    train_samples = filter_by_class(load_split(train_root), class_names)
-    val_samples = subsample(filter_by_class(load_split(val_root), class_names), val_max_samples, seed)
-    write_coco_split(train_samples, output_root / "train", class_names, train_box_scales)
-    write_coco_split(val_samples, output_root / "valid", class_names, {})
-    write_coco_split(val_samples, output_root / "test", class_names, {})
-
-
-def filter_by_class(samples: list[DetectionSample], class_names: tuple[str, ...]) -> list[DetectionSample]:
-    class_set = set(class_names)
-    return [sample for sample in samples if class_set.intersection(sample.category_names)]
-
-
-def subsample(samples: list[DetectionSample], max_samples: int, seed: int) -> list[DetectionSample]:
-    if max_samples <= 0 or len(samples) <= max_samples:
-        return samples
-    rng = np.random.default_rng(seed)
-    indexes = sorted(rng.choice(len(samples), size=max_samples, replace=False).tolist())
-    return [samples[index] for index in indexes]
-
-
-def write_coco_split(
-    samples: list[DetectionSample],
-    output_root: Path,
+def encode_boxes(
+    sample: DetectionSample,
     class_names: tuple[str, ...],
     box_scales: dict[str, float],
-) -> None:
-    output_root.mkdir(parents=True, exist_ok=True)
-    for sample in samples:
-        link_image(sample.image_path, output_root / sample.image_path.name)
-    coco = coco_annotations(samples, class_names, box_scales)
-    (output_root / "_annotations.coco.json").write_text(json.dumps(coco))
+) -> tuple[Float[np.ndarray, "D 4"], Int64[np.ndarray, " D"]]:
+    boxes = []
+    labels = []
+    for box, category_name in zip(sample.boxes_xywh, sample.category_names, strict=True):
+        if category_name not in class_names:
+            continue
+        x, y, width, height = scale_box(box, box_scales.get(category_name, 1.0)).tolist()
+        boxes.append([x + width / 2, y + height / 2, width, height])
+        labels.append(class_names.index(category_name))
+    return np.array(boxes, dtype=np.float32).reshape(-1, 4), np.array(labels, dtype=np.int64)
 
 
-def coco_annotations(
-    samples: list[DetectionSample],
-    class_names: tuple[str, ...],
-    box_scales: dict[str, float],
-) -> dict:
-    category_id_by_name = category_ids(class_names)
-    images = []
-    annotations = []
-    annotation_id = 1
-    for image_id, sample in enumerate(samples, start=1):
-        with Image.open(sample.image_path) as image:
-            width, height = image.size
-        images.append({"id": image_id, "file_name": sample.image_path.name, "width": width, "height": height})
-        for box, category_name in zip(sample.boxes_xywh, sample.category_names, strict=True):
-            if category_name not in category_id_by_name:
-                continue
-            scaled_box = scale_box(box, box_scales.get(category_name, 1.0))
-            x, y, box_width, box_height = box_to_pixels(scaled_box, width, height)
-            annotation = {
-                "id": annotation_id,
-                "image_id": image_id,
-                "category_id": category_id_by_name[category_name],
-                "bbox": [x, y, box_width, box_height],
-                "area": box_width * box_height,
-                "iscrowd": 0,
-            }
-            annotations.append(annotation)
-            annotation_id += 1
-    categories = [{"id": category_id, "name": name} for name, category_id in category_id_by_name.items()]
-    return {"images": images, "annotations": annotations, "categories": categories}
+def boxes_to_xyxy(boxes_cxcywh: Float[Tensor, "D 4"], width: float, height: float) -> Float[Tensor, "D 4"]:
+    centers = boxes_cxcywh[:, :2]
+    half_sizes = boxes_cxcywh[:, 2:] / 2
+    corners = torch.cat([centers - half_sizes, centers + half_sizes], dim=1)
+    return corners * torch.tensor([width, height, width, height], dtype=boxes_cxcywh.dtype)
 
 
 def scale_box(box: np.ndarray, scale: float) -> np.ndarray:
@@ -138,13 +160,3 @@ def scale_box(box: np.ndarray, scale: float) -> np.ndarray:
     scaled_x = min(max(x - (scaled_width - box_width) / 2, 0.0), 1.0 - scaled_width)
     scaled_y = min(max(y - (scaled_height - box_height) / 2, 0.0), 1.0 - scaled_height)
     return np.array([scaled_x, scaled_y, scaled_width, scaled_height], dtype=np.float32)
-
-
-def box_to_pixels(box: np.ndarray, width: int, height: int) -> tuple[float, float, float, float]:
-    x, y, box_width, box_height = box.tolist()
-    return x * width, y * height, box_width * width, box_height * height
-
-
-def link_image(source: Path, destination: Path) -> None:
-    destination.unlink(missing_ok=True)
-    destination.symlink_to(source.resolve().relative_to(destination.parent.resolve(), walk_up=True))

@@ -71,10 +71,13 @@ class CourtAugment:
     def __call__(self, sample: NumpySample) -> NumpySample:
         height, width = sample["image"].shape[:2]
         keypoints = sample.get("keypoints", np.zeros((0, 2), dtype=np.float32))
+        boxes_xywh = sample.get("boxes_xywh", np.zeros((0, 4), dtype=np.float32))
+        boxes_cxcywh = boxes_xywh.copy()
+        boxes_cxcywh[:, :2] += boxes_cxcywh[:, 2:] / 2
         targets = {
             "image": sample["image"],
             "keypoints": normalized_to_pixels(keypoints, width, height),
-            "bboxes": sample.get("boxes_cxcywh", np.zeros((0, 4), dtype=np.float32)),
+            "bboxes": boxes_cxcywh,
             "labels": sample.get("labels", np.zeros(0, dtype=np.int64)),
         }
         if "mask" in sample:
@@ -88,8 +91,11 @@ class CourtAugment:
             keypoints = pixels_to_normalized(transformed["keypoints"], width, height)
             output["keypoints"] = keypoints
             output["visibility"] = sample["visibility"] * points_inside_image(keypoints)
-        if "boxes_cxcywh" in sample:
-            output["boxes_cxcywh"] = np.array(transformed["bboxes"], dtype=np.float32).reshape(-1, 4)
+        if "boxes_xywh" in sample:
+            boxes_cxcywh = np.array(transformed["bboxes"], dtype=np.float32).reshape(-1, 4)
+            boxes_xywh = boxes_cxcywh.copy()
+            boxes_xywh[:, :2] -= boxes_xywh[:, 2:] / 2
+            output["boxes_xywh"] = boxes_xywh
             output["labels"] = np.array(transformed["labels"], dtype=np.int64)
         return self.hflip(output)
 

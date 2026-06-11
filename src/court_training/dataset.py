@@ -23,7 +23,7 @@ class NumpySample(TypedDict):
     mask: NotRequired[Float[np.ndarray, "H W N"]]
     keypoints: NotRequired[Float[np.ndarray, "K 2"]]
     visibility: NotRequired[Float[np.ndarray, "*K"]]
-    boxes_cxcywh: NotRequired[Float[np.ndarray, "D 4"]]
+    boxes_xywh: NotRequired[Float[np.ndarray, "D 4"]]
     labels: NotRequired[Int64[np.ndarray, "D"]]
 
 
@@ -32,7 +32,7 @@ class TorchSample(TypedDict):
     mask: NotRequired[Float[Tensor, "N H W"]]
     keypoints: NotRequired[Float[Tensor, "K 2"]]
     visibility: NotRequired[Float[Tensor, "*K"]]
-    boxes_cxcywh: NotRequired[Float[Tensor, "D 4"]]
+    boxes_xywh: NotRequired[Float[Tensor, "D 4"]]
     labels: NotRequired[Int64[Tensor, "D"]]
 
 
@@ -65,9 +65,9 @@ class CourtDataset(Dataset):
             self.boxes = {}
             for path in image_paths:
                 detection_path = annotation_path(root, path, "detections", ".npz")
-                boxes_cxcywh, labels = read_detections(detection_path)
+                boxes_xywh, labels = read_detections(detection_path)
                 if len(labels):
-                    self.boxes[path] = (boxes_cxcywh, labels)
+                    self.boxes[path] = (boxes_xywh, labels)
             image_paths = [path for path in image_paths if path in self.boxes]
         self.image_paths = image_paths
         if not image_paths:
@@ -90,8 +90,8 @@ class CourtDataset(Dataset):
         if "keypoints" in sample:
             tensors["keypoints"] = torch.from_numpy(sample["keypoints"])
             tensors["visibility"] = torch.from_numpy(sample["visibility"])
-        if "boxes_cxcywh" in sample:
-            tensors["boxes_cxcywh"] = torch.from_numpy(sample["boxes_cxcywh"])
+        if "boxes_xywh" in sample:
+            tensors["boxes_xywh"] = torch.from_numpy(sample["boxes_xywh"])
             tensors["labels"] = torch.from_numpy(sample["labels"])
         return tensors
 
@@ -108,8 +108,8 @@ class CourtDataset(Dataset):
             sample["keypoints"] = keypoints
             sample["visibility"] = visibility
         if self.boxes is not None:
-            boxes_cxcywh, labels = self.boxes[image_path]
-            sample["boxes_cxcywh"] = boxes_cxcywh
+            boxes_xywh, labels = self.boxes[image_path]
+            sample["boxes_xywh"] = boxes_xywh
             sample["labels"] = labels
         return sample
 
@@ -140,12 +140,8 @@ def read_detections(path: Path) -> tuple[Float[np.ndarray, "D 4"], Int64[np.ndar
     category_names = data["category_names"].astype(str).tolist()
     if len(boxes_xywh) != len(category_names):
         raise ValueError(f"{path} has {len(boxes_xywh)} boxes and {len(category_names)} category names")
-    boxes = []
-    labels = []
-    for box, name in zip(boxes_xywh, category_names, strict=True):
+    for name in category_names:
         if name not in BASKETBALL_DETECTION_CLASSES:
             raise ValueError(f"{path} has unknown detection class: {name}")
-        x, y, width, height = box.tolist()
-        boxes.append([x + width / 2, y + height / 2, width, height])
-        labels.append(BASKETBALL_DETECTION_CLASSES.index(name))
-    return np.array(boxes, dtype=np.float32).reshape(-1, 4), np.array(labels, dtype=np.int64)
+    labels = [BASKETBALL_DETECTION_CLASSES.index(name) for name in category_names]
+    return boxes_xywh.reshape(-1, 4), np.array(labels, dtype=np.int64)

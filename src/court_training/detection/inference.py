@@ -3,7 +3,7 @@ import torch
 from jaxtyping import Float
 from PIL import Image
 from torch import Tensor
-from torchvision.ops import batched_nms
+from torchvision.ops import batched_nms, box_convert
 
 from court_training import flip
 from court_training.constants import IMAGE_MEAN, IMAGE_STD
@@ -26,14 +26,15 @@ def predict(
     images = torch.stack([image_to_tensor(variant, model.resolution) for variant in variants]).to(model.device)
     results = model.predict(images)
     if hflip:
-        results[1]["boxes"] = flip.flip_torch(boxes_xyxy=results[1]["boxes"])["boxes_xyxy"]
+        results[1]["boxes"] = flip.flip_torch(boxes_xywh=results[1]["boxes"])["boxes_xywh"]
 
     boxes = torch.cat([result["boxes"] for result in results])
     scores = torch.cat([result["scores"] for result in results])
     labels = torch.cat([result["labels"] for result in results])
     confident = scores >= threshold
     boxes, scores, labels = boxes[confident], scores[confident], labels[confident]
-    keep = batched_nms(boxes, scores, labels, nms_iou)[:max_detections]
+    boxes_xyxy = box_convert(boxes, "xywh", "xyxy")
+    keep = batched_nms(boxes_xyxy, scores, labels, nms_iou)[:max_detections]
     return {"boxes": boxes[keep].cpu(), "scores": scores[keep].cpu(), "labels": labels[keep].cpu()}
 
 

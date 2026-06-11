@@ -6,11 +6,13 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "albumentations==2.0.8",
+    "fastapi>=0.124.0",
     "jaxtyping>=0.3.0",
     "loguru>=0.7.3",
     "numpy>=2.2.0",
     "opencv-python-headless==4.13.0.92",
     "pillow>=12.0.0",
+    "python-multipart>=0.0.20",
     "rfdetr[train]>=1.7.1",
     "sport-analytics",
     "timm>=1.0.27",
@@ -18,6 +20,7 @@ dependencies = [
     "torchmetrics>=1.9",
     "tqdm>=4.67.0",
     "typer>=0.15.0",
+    "uvicorn[standard]>=0.38.0",
 ]
 
 [dependency-groups]

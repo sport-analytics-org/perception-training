@@ -28,9 +28,8 @@ def load_split(root: Path) -> list[DetectionSample]:
         raise ValueError(f"No images found under {root}")
     samples = []
     for image_path in image_paths:
-        boxes_xywh, category_names = dataset.read_detections(
-            dataset.annotation_path(root, image_path, "detections", ".npz")
-        )
+        detection_path = dataset.annotation_path(root, image_path, "detections", ".npz")
+        boxes_xywh, category_names = dataset.read_detections(detection_path)
         samples.append(DetectionSample(image_path=image_path, boxes_xywh=boxes_xywh, category_names=category_names))
     return samples
 

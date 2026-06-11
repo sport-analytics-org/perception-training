@@ -64,7 +64,8 @@ class CourtDataset(Dataset):
         if load_bbox:
             self.boxes = {}
             for path in image_paths:
-                boxes_cxcywh, labels = encode_boxes(*read_detections(annotation_path(root, path, "detections", ".npz")))
+                detection_path = annotation_path(root, path, "detections", ".npz")
+                boxes_cxcywh, labels = encode_boxes(*read_detections(detection_path))
                 if len(labels):
                     self.boxes[path] = (boxes_cxcywh, labels)
             image_paths = [path for path in image_paths if path in self.boxes]

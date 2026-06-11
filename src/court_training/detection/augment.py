@@ -1,7 +1,7 @@
 import albumentations as A
 import numpy as np
 
-from court_training.detection.data import NumpySample
+from court_training.dataset import NumpySample
 
 
 class DetectionAugment:

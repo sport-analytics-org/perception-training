@@ -46,6 +46,24 @@ def canonical_category(name: str) -> str:
     return CATEGORY_ALIASES.get(name, name)
 
 
+def canonical_classes(class_names: tuple[str, ...]) -> tuple[str, ...]:
+    names = tuple(canonical_category(name) for name in class_names)
+    if not names:
+        raise ValueError("At least one detection class is required")
+    unknown = sorted(set(names) - set(BASKETBALL_DETECTION_CLASSES))
+    if unknown:
+        raise ValueError(f"Unknown detection classes: {', '.join(unknown)}")
+    if len(set(names)) != len(names):
+        raise ValueError(f"Duplicate detection classes: {', '.join(names)}")
+    return names
+
+
+def parse_classes(classes: str | None) -> tuple[str, ...]:
+    if classes is None:
+        return BASKETBALL_DETECTION_CLASSES
+    return canonical_classes(tuple(name.strip() for name in classes.split(",") if name.strip()))
+
+
 def class_id(name: str, class_names: tuple[str, ...]) -> int:
     return class_names.index(canonical_category(name))
 
@@ -56,6 +74,7 @@ def write_yolo_dataset(
     output_root: Path,
     class_names: tuple[str, ...] = BASKETBALL_DETECTION_CLASSES,
 ) -> Path:
+    class_names = canonical_classes(class_names)
     train_samples = load_split(train_root)
     val_samples = load_split(val_root)
     write_yolo_split(train_samples, output_root, "train", class_names)
@@ -76,11 +95,14 @@ def write_yolo_split(
     label_root = output_root / "labels" / split
     image_root.mkdir(parents=True, exist_ok=True)
     label_root.mkdir(parents=True, exist_ok=True)
+    selected_classes = set(class_names)
     for sample in samples:
         image_path = image_root / sample.image_path.name
         link_image(sample.image_path, image_path)
         lines = []
         for box, category_name in zip(sample.boxes_xywh, sample.category_names, strict=True):
+            if category_name not in selected_classes:
+                continue
             values = [class_id(category_name, class_names), *box.tolist()]
             lines.append(" ".join(str(value) for value in values))
         (label_root / sample.image_path.with_suffix(".txt").name).write_text("\n".join(lines) + ("\n" if lines else ""))
@@ -92,6 +114,7 @@ def write_coco_dataset(
     output_root: Path,
     class_names: tuple[str, ...] = BASKETBALL_DETECTION_CLASSES,
 ) -> Path:
+    class_names = canonical_classes(class_names)
     write_coco_split(load_split(train_root), output_root / "train", class_names)
     write_coco_split(load_split(val_root), output_root / "valid", class_names)
     write_coco_split(load_split(val_root), output_root / "test", class_names)
@@ -103,6 +126,7 @@ def write_coco_split(samples: list[DetectionSample], output_root: Path, class_na
     images = []
     annotations = []
     annotation_id = 1
+    selected_classes = set(class_names)
     for image_id, sample in enumerate(samples, start=1):
         image = Image.open(sample.image_path)
         width, height = image.size
@@ -110,6 +134,8 @@ def write_coco_split(samples: list[DetectionSample], output_root: Path, class_na
         link_image(sample.image_path, output_image)
         images.append({"id": image_id, "file_name": output_image.name, "width": width, "height": height})
         for box, category_name in zip(sample.boxes_xywh, sample.category_names, strict=True):
+            if category_name not in selected_classes:
+                continue
             x, y, box_width, box_height = normalized_xywh_to_pixels(box, width, height)
             annotations.append(
                 {

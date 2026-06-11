@@ -2,7 +2,7 @@ from pathlib import Path
 
 import typer
 
-from court_training.detection.data import write_yolo_dataset
+from court_training.detection.data import parse_classes, write_yolo_dataset
 
 app = typer.Typer(help="Fine-tune an Ultralytics YOLO detector on exported basketball detections.")
 
@@ -16,6 +16,7 @@ def main(
     epochs: int = typer.Option(50, help="Training epochs."),
     image_size: int = typer.Option(640, help="Square training image size."),
     batch_size: int = typer.Option(16, help="Training batch size."),
+    classes: str | None = typer.Option(None, help="Comma-separated class names to train and evaluate."),
 ) -> None:
     try:
         from ultralytics import YOLO
@@ -27,6 +28,7 @@ def main(
         train_root.expanduser().resolve(),
         val_root.expanduser().resolve(),
         output_dir / "dataset-yolo",
+        class_names=parse_classes(classes),
     )
     yolo = YOLO(model)
     yolo.train(

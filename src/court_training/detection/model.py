@@ -67,16 +67,15 @@ class CourtDetector(nn.Module):
             out_feature_indexes=self.config.out_feature_indexes,
         )
         backbone_groups = self.model.backbone[0].get_named_param_lr_pairs(args, prefix="backbone.0")
-        decoder_params = [
-            param
-            for name, param in self.model.named_parameters()
-            if "transformer.decoder" in name and param.requires_grad
-        ]
-        other_params = [
-            param
-            for name, param in self.model.named_parameters()
-            if name not in backbone_groups and "transformer.decoder" not in name and param.requires_grad
-        ]
+        decoder_params = []
+        other_params = []
+        for name, param in self.model.named_parameters():
+            if not param.requires_grad or name in backbone_groups:
+                continue
+            if "transformer.decoder" in name:
+                decoder_params.append(param)
+            else:
+                other_params.append(param)
         return [
             {"params": other_params, "lr": lr},
             {"params": decoder_params, "lr": lr * LR_COMPONENT_DECAY},

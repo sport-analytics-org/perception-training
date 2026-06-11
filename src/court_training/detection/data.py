@@ -69,13 +69,12 @@ def write_coco_dataset(
     val_root: Path,
     output_root: Path,
     class_names: tuple[str, ...] = BASKETBALL_DETECTION_CLASSES,
-    train_max_samples: int = 0,
     val_max_samples: int = 0,
     sample_seed: int = 42,
     train_box_scales: dict[str, float] | None = None,
 ) -> Path:
     class_names = canonical_classes(class_names)
-    train_samples = select_samples(load_split(train_root), class_names, train_max_samples, sample_seed)
+    train_samples = select_samples(load_split(train_root), class_names, max_samples=0, seed=sample_seed)
     val_samples = select_samples(load_split(val_root), class_names, val_max_samples, sample_seed)
     write_coco_split(train_samples, output_root / "train", class_names, box_scales=train_box_scales)
     write_coco_split(val_samples, output_root / "valid", class_names)

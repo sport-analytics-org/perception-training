@@ -43,9 +43,9 @@ class TorchSample(TypedDict):
 class CourtDataset(Dataset):
     """Images from a flat export with any combination of masks, keypoints, and boxes.
 
-    Masks and keypoints are enabled by booleans; boxes by the `box_classes` to encode.
-    Images missing an enabled annotation are skipped; with boxes enabled, images without
-    any box of the requested classes are dropped.
+    Every modality is enabled by a boolean; box labels index into BASKETBALL_DETECTION_CLASSES.
+    Images missing an enabled annotation are skipped; with boxes enabled, images without any
+    box are dropped.
     """
 
     def __init__(
@@ -54,8 +54,7 @@ class CourtDataset(Dataset):
         image_size: tuple[int, int],
         load_masks: bool = False,
         load_keypoints: bool = False,
-        box_classes: tuple[str, ...] | None = None,
-        box_scales: dict[str, float] | None = None,
+        load_bbox: bool = False,
         transform: Callable[[NumpySample], NumpySample] | None = None,
     ) -> None:
         self.root = root
@@ -70,14 +69,13 @@ class CourtDataset(Dataset):
         if load_keypoints:
             image_paths = [path for path in image_paths if annotation_path(root, path, "keypoints", ".json").is_file()]
         self.boxes = None
-        if box_classes is not None:
+        if load_bbox:
             self.boxes = {}
             for path in image_paths:
                 detection_path = annotation_path(root, path, "detections", ".npz")
                 if not detection_path.is_file():
                     continue
-                boxes_xywh, category_names = read_detections(detection_path)
-                boxes_cxcywh, labels = encode_boxes(boxes_xywh, category_names, box_classes, box_scales or {})
+                boxes_cxcywh, labels = encode_boxes(*read_detections(detection_path))
                 if len(labels):
                     self.boxes[path] = (boxes_cxcywh, labels)
             image_paths = [path for path in image_paths if path in self.boxes]
@@ -164,31 +162,15 @@ def read_detections(path: Path) -> tuple[Float[np.ndarray, "D 4"], tuple[str, ..
 def encode_boxes(
     boxes_xywh: Float[np.ndarray, "D 4"],
     category_names: tuple[str, ...],
-    class_names: tuple[str, ...],
-    box_scales: dict[str, float],
 ) -> tuple[Float[np.ndarray, "D 4"], Int64[np.ndarray, "D"]]:
     boxes = []
     labels = []
     for box, name in zip(boxes_xywh, category_names, strict=True):
-        category_name = canonical_category(name)
-        if category_name not in class_names:
-            continue
-        x, y, width, height = scale_box(box, box_scales.get(category_name, 1.0)).tolist()
+        x, y, width, height = box.tolist()
         boxes.append([x + width / 2, y + height / 2, width, height])
-        labels.append(class_names.index(category_name))
+        labels.append(BASKETBALL_DETECTION_CLASSES.index(canonical_category(name)))
     return np.array(boxes, dtype=np.float32).reshape(-1, 4), np.array(labels, dtype=np.int64)
 
 
 def canonical_category(name: str) -> str:
     return CATEGORY_ALIASES.get(name, name)
-
-
-def scale_box(box: np.ndarray, scale: float) -> np.ndarray:
-    if scale == 1.0:
-        return box
-    x, y, box_width, box_height = box.tolist()
-    scaled_width = min(box_width * scale, 1.0)
-    scaled_height = min(box_height * scale, 1.0)
-    scaled_x = min(max(x - (scaled_width - box_width) / 2, 0.0), 1.0 - scaled_width)
-    scaled_y = min(max(y - (scaled_height - box_height) / 2, 0.0), 1.0 - scaled_height)
-    return np.array([scaled_x, scaled_y, scaled_width, scaled_height], dtype=np.float32)

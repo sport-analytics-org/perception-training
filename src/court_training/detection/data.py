@@ -34,26 +34,11 @@ def load_split(root: Path) -> list[DetectionSample]:
     return samples
 
 
-def filter_by_class(samples: list[DetectionSample], class_names: tuple[str, ...]) -> list[DetectionSample]:
-    class_set = set(class_names)
-    return [sample for sample in samples if class_set.intersection(sample.category_names)]
-
-
 def subsample_indexes(count: int, max_samples: int, seed: int) -> list[int]:
     if max_samples <= 0 or count <= max_samples:
         return list(range(count))
     rng = np.random.default_rng(seed)
     return sorted(rng.choice(count, size=max_samples, replace=False).tolist())
-
-
-def parse_classes(classes: str) -> tuple[str, ...]:
-    names = tuple(dataset.canonical_category(name.strip()) for name in classes.split(","))
-    unknown = sorted(set(names) - set(dataset.BASKETBALL_DETECTION_CLASSES))
-    if unknown:
-        raise ValueError(f"Unknown detection classes: {', '.join(unknown)}")
-    if len(set(names)) != len(names):
-        raise ValueError(f"Duplicate detection classes: {', '.join(names)}")
-    return names
 
 
 def collate(batch: list[dataset.TorchSample]) -> tuple[Float[Tensor, "B 3 H W"], list[Target]]:

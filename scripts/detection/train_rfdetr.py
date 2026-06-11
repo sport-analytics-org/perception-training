@@ -7,7 +7,6 @@ from rfdetr import RFDETRLarge
 from court_training.detection import data
 
 app = typer.Typer(help="Fine-tune RF-DETR Large on basketball detections.")
-DEFAULT_CLASSES = "ball,player,referee"
 COURT_AUGMENTATION = {
     "HorizontalFlip": {"p": 0.5},
     "Affine": {
@@ -45,22 +44,20 @@ def main(
     val_max_samples: int = typer.Option(800, help="Use at most this many validation images during training."),
     seed: int = typer.Option(51, help="Training seed."),
     train_box_scale: str = typer.Option("ball=1.35", help="Comma-separated class=scale training box overrides."),
-    classes: str = typer.Option(DEFAULT_CLASSES, help="Comma-separated class names to train and evaluate."),
+    classes: str = typer.Option("ball,player,referee", help="Comma-separated class names to train and evaluate."),
 ) -> None:
-    if resolution <= 0:
-        raise typer.BadParameter("Resolution must be positive.")
-
     output_dir = output_dir.expanduser().resolve()
     class_names = data.parse_classes(classes)
     train_box_scales = parse_box_scales(train_box_scale)
 
-    dataset_dir = data.write_coco_dataset(
+    dataset_dir = output_dir / "dataset-coco"
+    data.write_coco_dataset(
         train_root.expanduser().resolve(),
         val_root.expanduser().resolve(),
-        output_dir / "dataset-coco",
-        class_names=class_names,
+        dataset_dir,
+        class_names,
         val_max_samples=val_max_samples,
-        sample_seed=seed,
+        seed=seed,
         train_box_scales=train_box_scales,
     )
 

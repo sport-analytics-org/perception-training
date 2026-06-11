@@ -22,8 +22,8 @@ dataset-root/
 
 The `masks`, `keypoints`, and `detections` directories are only created when those annotations are exported.
 Mask files are grayscale WebP bitfields. Bit `0..5` maps to the mask order above.
-Detection files are compressed NumPy archives with normalized `boxes_xywh` and per-box
-`category_names` arrays. Samples without detection annotations get empty arrays.
+Detection files are compressed NumPy archives with normalized top-left `boxes_xywh`
+and per-box `category_names` arrays. Samples without detection annotations get empty arrays.
 
 To export original labelled subdatasets into that layout:
 
@@ -73,22 +73,10 @@ uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/detect
   --detections
 ```
 
-Fine-tune YOLO:
-
-```bash
-uv run python scripts/detection/train_yolo.py /path/to/detection-dataset/train /path/to/detection-dataset/val /path/to/runs/yolo
-```
-
 Fine-tune RF-DETR:
 
 ```bash
-uv run python scripts/detection/train_rfdetr.py /path/to/detection-dataset/train /path/to/detection-dataset/val /path/to/runs/rfdetr
-```
-
-Fine-tune the repo-native DINOv3-backbone detector:
-
-```bash
-uv run python scripts/detection/train_dinov3.py /path/to/detection-dataset/train /path/to/detection-dataset/val /path/to/runs/dinov3
+uv run python scripts/detection/train_rfdetr.py /path/to/detection-dataset/train /path/to/detection-dataset/val /path/to/runs/rfdetr --classes player
 ```
 
 ## Homography fitting

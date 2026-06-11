@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import typer
+from rfdetr import RFDETRBase
 
-from court_training.detection.data import parse_classes, write_coco_dataset
+from court_training.detection import data
 
 app = typer.Typer(help="Fine-tune an RF-DETR detector on exported basketball detections.")
 
@@ -24,17 +25,12 @@ def main(
     ),
     classes: str | None = typer.Option(None, help="Comma-separated class names to train and evaluate."),
 ) -> None:
-    try:
-        from rfdetr import RFDETRBase
-    except ImportError as error:
-        raise RuntimeError("Install RF-DETR support with `uv pip install rfdetr`.") from error
-
     output_dir = output_dir.expanduser().resolve()
-    dataset_dir = write_coco_dataset(
+    dataset_dir = data.write_coco_dataset(
         train_root.expanduser().resolve(),
         val_root.expanduser().resolve(),
         output_dir / "dataset-coco",
-        class_names=parse_classes(classes),
+        class_names=data.parse_classes(classes),
     )
     model = RFDETRBase(fused_optimizer=fused_optimizer)
     model.train(

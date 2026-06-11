@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import typer
-from jaxtyping import Float, UInt8
+from jaxtyping import Bool, Float, UInt8
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
 from sportanalytics import FibaCourt, NbaCourt
@@ -219,7 +219,7 @@ def render_at_image_size(
 def project_keypoints(
     court: BasketCourt,
     homography: Float[np.ndarray, "3 3"],
-) -> tuple[Float[np.ndarray, "K 2"], np.ndarray]:
+) -> tuple[Float[np.ndarray, "K 2"], Bool[np.ndarray, "K"]]:
     points = normalized_keypoints(court)
     homogeneous = np.concatenate([points, np.ones((len(points), 1))], axis=1)
     projected = homogeneous @ homography.T
@@ -242,7 +242,7 @@ def save_labels(
     masks: Float[Tensor, "N H W"],
     homography: Float[np.ndarray, "3 3"],
     keypoints: Float[np.ndarray, "K 2"],
-    visibility: np.ndarray,
+    visibility: Bool[np.ndarray, "K"],
     score: float,
 ) -> None:
     image_relative = image_path.relative_to(dataset_root / "images")

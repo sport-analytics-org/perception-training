@@ -167,9 +167,8 @@ def write_member(shard: tarfile.TarFile, member: tarfile.TarInfo, output_path: P
 
 def write_detections_npz(data: dict, output_path: Path) -> None:
     detections = data.get("detections", [])
-    categories = data.get("categories", [])
     boxes_xywh = np.array([detection["bbox_xywh"] for detection in detections], dtype=np.float32).reshape(-1, 4)
-    category_names = np.array([category["name"] for category in categories], dtype=str)
+    category_names = np.array([detection["category_name"] for detection in detections], dtype=str)
     np.savez_compressed(
         output_path,
         boxes_xywh=boxes_xywh,

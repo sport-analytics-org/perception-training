@@ -1,92 +1,129 @@
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 import numpy as np
 import torch
-from jaxtyping import Float, UInt8
+from jaxtyping import Float, Int64, UInt8
 from PIL import Image
+from sportanalytics import NbaCourt
 from torch import Tensor
 from torch.utils.data import Dataset
 
 from court_training.constants import IMAGE_MEAN, IMAGE_STD
 
+BASKETBALL_MASK_NAMES = tuple(NbaCourt.areas())
+BASKETBALL_KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
+BASKETBALL_DETECTION_CLASSES = ("ball", "player", "number", "referee", "rim")
+
 
 class NumpySample(TypedDict):
     image: UInt8[np.ndarray, "H W 3"]
-    mask: Float[np.ndarray, "H W N"]
-    keypoints: Float[np.ndarray, "K 2"]
-    visibility: Float[np.ndarray, "*K"]
+    mask: NotRequired[Float[np.ndarray, "H W N"]]
+    keypoints: NotRequired[Float[np.ndarray, "K 2"]]
+    visibility: NotRequired[Float[np.ndarray, "*K"]]
+    boxes_cxcywh: NotRequired[Float[np.ndarray, "D 4"]]
+    labels: NotRequired[Int64[np.ndarray, "D"]]
 
 
 class TorchSample(TypedDict):
     image: Float[Tensor, "3 H W"]
-    mask: Float[Tensor, "N H W"]
-    keypoints: Float[Tensor, "K 2"]
-    visibility: Float[Tensor, "*K"]
+    mask: NotRequired[Float[Tensor, "N H W"]]
+    keypoints: NotRequired[Float[Tensor, "K 2"]]
+    visibility: NotRequired[Float[Tensor, "*K"]]
+    boxes_cxcywh: NotRequired[Float[Tensor, "D 4"]]
+    labels: NotRequired[Int64[Tensor, "D"]]
 
 
-class MaskDataset(Dataset):
+class CourtDataset(Dataset):
+    """Images from a flat export with any combination of masks, keypoints, and boxes.
+
+    Every modality is enabled by a boolean; box labels index into BASKETBALL_DETECTION_CLASSES.
+    Every image must have each enabled annotation; with boxes enabled, images without any box
+    are dropped.
+    """
+
     def __init__(
         self,
         root: Path,
-        load_mask: Callable[[np.ndarray], Float[np.ndarray, "H W N"]],
         image_size: tuple[int, int],
+        load_masks: bool = False,
+        load_keypoints: bool = False,
+        load_bbox: bool = False,
         transform: Callable[[NumpySample], NumpySample] | None = None,
     ) -> None:
-        self.load_mask = load_mask
+        self.root = root
         self.image_size = image_size
+        self.load_masks = load_masks
+        self.load_keypoints = load_keypoints
         self.transform = transform
-        self.keypoint_root = root / "keypoints"
-        self.items = image_mask_pairs(root)
-        if not self.items:
-            raise ValueError(f"No image/mask pairs found under {root}")
+
+        image_paths = sorted((root / "images").glob("*.jpg"))
+        self.boxes = None
+        if load_bbox:
+            self.boxes = {}
+            for path in image_paths:
+                detection_path = annotation_path(root, path, "detections", ".npz")
+                boxes_cxcywh, labels = read_detections(detection_path)
+                if len(labels):
+                    self.boxes[path] = (boxes_cxcywh, labels)
+            image_paths = [path for path in image_paths if path in self.boxes]
+        self.image_paths = image_paths
+        if not image_paths:
+            raise ValueError(f"No samples found under {root}")
 
     def __len__(self) -> int:
-        return len(self.items)
+        return len(self.image_paths)
 
     def __getitem__(self, index: int) -> TorchSample:
-        sample = self.load(index, self.image_size)
+        sample = self.load(index)
         if self.transform:
             sample = self.transform(sample)
+        return self.to_tensor(sample)
+
+    def to_tensor(self, sample: NumpySample) -> TorchSample:
         image = torch.from_numpy(sample["image"].astype(np.float32) / 255.0).permute(2, 0, 1)
-        image = (image - IMAGE_MEAN) / IMAGE_STD
-        return {
-            "image": image,
-            "mask": torch.from_numpy(sample["mask"]).permute(2, 0, 1),
-            "keypoints": torch.from_numpy(sample["keypoints"]),
-            "visibility": torch.from_numpy(sample["visibility"]),
-        }
+        tensors: TorchSample = {"image": (image - IMAGE_MEAN) / IMAGE_STD}
+        if "mask" in sample:
+            tensors["mask"] = torch.from_numpy(sample["mask"]).permute(2, 0, 1)
+        if "keypoints" in sample:
+            tensors["keypoints"] = torch.from_numpy(sample["keypoints"])
+            tensors["visibility"] = torch.from_numpy(sample["visibility"])
+        if "boxes_cxcywh" in sample:
+            tensors["boxes_cxcywh"] = torch.from_numpy(sample["boxes_cxcywh"])
+            tensors["labels"] = torch.from_numpy(sample["labels"])
+        return tensors
 
-    def load(self, index: int, image_size: tuple[int, int]) -> NumpySample:
-        image_path, mask_path = self.items[index]
+    def load(self, index: int) -> NumpySample:
+        image_path = self.image_paths[index]
+        height, width = self.image_size
         image = Image.open(image_path).convert("RGB")
-        bitfield = Image.open(mask_path).convert("L")
-        height, width = image_size
         image = image.resize((width, height), Image.Resampling.BILINEAR)
-        bitfield = bitfield.resize((width, height), Image.Resampling.NEAREST)
-        image_array = np.array(image, dtype=np.uint8)
-        bitfield_array = np.array(bitfield, dtype=np.uint8)
-        keypoint_path = self.keypoint_root / mask_path.with_suffix(".json").name
-        keypoints, visibility = read_keypoints(keypoint_path)
-        return {
-            "image": image_array,
-            "mask": self.load_mask(bitfield_array),
-            "keypoints": keypoints,
-            "visibility": visibility,
-        }
+        sample: NumpySample = {"image": np.array(image, dtype=np.uint8)}
+        if self.load_masks:
+            sample["mask"] = read_mask(annotation_path(self.root, image_path, "masks", ".webp"), self.image_size)
+        if self.load_keypoints:
+            keypoints, visibility = read_keypoints(annotation_path(self.root, image_path, "keypoints", ".json"))
+            sample["keypoints"] = keypoints
+            sample["visibility"] = visibility
+        if self.boxes is not None:
+            boxes_cxcywh, labels = self.boxes[image_path]
+            sample["boxes_cxcywh"] = boxes_cxcywh
+            sample["labels"] = labels
+        return sample
 
 
-def image_mask_pairs(root: Path) -> list[tuple[Path, Path]]:
-    pairs = []
-    image_root = root / "images"
-    mask_root = root / "masks"
-    for image_path in sorted(image_root.glob("*.jpg")):
-        mask_path = mask_root / image_path.with_suffix(".webp").name
-        if mask_path.is_file():
-            pairs.append((image_path, mask_path))
-    return pairs
+def annotation_path(root: Path, image_path: Path, annotation_dir: str, suffix: str) -> Path:
+    return root / annotation_dir / image_path.with_suffix(suffix).name
+
+
+def read_mask(path: Path, image_size: tuple[int, int]) -> Float[np.ndarray, "H W N"]:
+    height, width = image_size
+    bitfield = Image.open(path).convert("L").resize((width, height), Image.Resampling.NEAREST)
+    bitfield_array = np.array(bitfield, dtype=np.uint8)
+    masks = [(bitfield_array & (1 << bit)) > 0 for bit in range(len(BASKETBALL_MASK_NAMES))]
+    return np.stack(masks, axis=-1).astype(np.float32)
 
 
 def read_keypoints(path: Path) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarray, "*K"]]:
@@ -95,3 +132,20 @@ def read_keypoints(path: Path) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarr
     keypoints = np.array([point["position"] for point in points], dtype=np.float32)
     visibility = np.array([point["visible"] for point in points], dtype=np.float32)
     return keypoints, visibility
+
+
+def read_detections(path: Path) -> tuple[Float[np.ndarray, "D 4"], Int64[np.ndarray, "D"]]:
+    data = np.load(path)
+    boxes_xywh = data["boxes_xywh"].astype(np.float32)
+    category_names = data["category_names"].astype(str).tolist()
+    if len(boxes_xywh) != len(category_names):
+        raise ValueError(f"{path} has {len(boxes_xywh)} boxes and {len(category_names)} category names")
+    boxes = []
+    labels = []
+    for box, name in zip(boxes_xywh, category_names, strict=True):
+        if name not in BASKETBALL_DETECTION_CLASSES:
+            raise ValueError(f"{path} has unknown detection class: {name}")
+        x, y, width, height = box.tolist()
+        boxes.append([x + width / 2, y + height / 2, width, height])
+        labels.append(BASKETBALL_DETECTION_CLASSES.index(name))
+    return np.array(boxes, dtype=np.float32).reshape(-1, 4), np.array(labels, dtype=np.int64)

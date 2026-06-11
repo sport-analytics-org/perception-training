@@ -17,6 +17,7 @@ def main(
     image_size: int = typer.Option(640, help="Square training image size."),
     batch_size: int = typer.Option(16, help="Training batch size."),
     classes: str | None = typer.Option(None, help="Comma-separated class names to train and evaluate."),
+    optimizer: str | None = typer.Option(None, help="YOLO optimizer name, such as AdamW or SGD."),
     learning_rate: float | None = typer.Option(None, help="Initial YOLO learning rate."),
     final_lr_fraction: float = typer.Option(0.01, help="Final LR as a fraction of the initial LR."),
     patience: int = typer.Option(100, help="Early-stopping patience in epochs."),
@@ -35,6 +36,8 @@ def main(
     )
     yolo = YOLO(model)
     train_kwargs = {}
+    if optimizer is not None:
+        train_kwargs["optimizer"] = optimizer
     if learning_rate is not None:
         train_kwargs["lr0"] = learning_rate
         train_kwargs["lrf"] = final_lr_fraction

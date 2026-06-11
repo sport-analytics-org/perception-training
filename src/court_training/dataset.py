@@ -80,6 +80,9 @@ class CourtDataset(Dataset):
         sample = self.load(index)
         if self.transform:
             sample = self.transform(sample)
+        return self.to_tensor(sample)
+
+    def to_tensor(self, sample: NumpySample) -> TorchSample:
         image = torch.from_numpy(sample["image"].astype(np.float32) / 255.0).permute(2, 0, 1)
         tensors: TorchSample = {"image": (image - IMAGE_MEAN) / IMAGE_STD}
         if "mask" in sample:

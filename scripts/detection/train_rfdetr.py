@@ -17,6 +17,11 @@ def main(
     grad_accum_steps: int = typer.Option(4, help="RF-DETR gradient accumulation steps."),
     learning_rate: float = typer.Option(1e-4, help="RF-DETR learning rate."),
     resolution: int = typer.Option(560, help="Input resolution. RF-DETR expects this to be divisible by 56."),
+    fused_optimizer: bool = typer.Option(
+        True,
+        "--fused-optimizer/--no-fused-optimizer",
+        help="Use RF-DETR's fused AdamW optimizer when supported.",
+    ),
 ) -> None:
     try:
         from rfdetr import RFDETRBase
@@ -29,7 +34,7 @@ def main(
         val_root.expanduser().resolve(),
         output_dir / "dataset-coco",
     )
-    model = RFDETRBase()
+    model = RFDETRBase(fused_optimizer=fused_optimizer)
     model.train(
         dataset_dir=str(dataset_dir),
         output_dir=str(output_dir / "rfdetr"),

@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from court_training.augment import CourtAugment
 from court_training.constants import TTA_SCALES
-from court_training.dataset import CourtDataset
+from court_training.dataset import MaskDataset
 from court_training.segmentation.model import CourtSegmenter
 
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
@@ -57,12 +57,10 @@ def main(
     output_dir.mkdir(parents=True, exist_ok=True)
     image_size = (image_height, image_width)
 
-    train_data = CourtDataset(
+    train_data = MaskDataset(
         train_root.expanduser().resolve(),
-        image_size=image_size,
         load_mask=load_mask,
-        load_masks=True,
-        load_keypoints=True,
+        image_size=image_size,
         transform=CourtAugment(
             mask_names=BASKETBALL_MASK_NAMES,
             keypoint_names=BASKETBALL_KEYPOINT_NAMES,
@@ -70,13 +68,7 @@ def main(
             crop_cutout=crop_cutout,
         ),
     )
-    eval_data = CourtDataset(
-        val_root.expanduser().resolve(),
-        image_size=image_size,
-        load_mask=load_mask,
-        load_masks=True,
-        load_keypoints=True,
-    )
+    eval_data = MaskDataset(val_root.expanduser().resolve(), load_mask=load_mask, image_size=image_size)
     train_loader = DataLoader(
         train_data,
         batch_size=batch_size,

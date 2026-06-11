@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from court_training.dataset import CourtDataset
+from court_training import dataset
 
 BASKETBALL_DETECTION_CLASSES = ("ball", "player", "number", "referee", "rim")
 CATEGORY_ALIASES = {
@@ -22,21 +22,19 @@ class DetectionSample:
 
 
 def load_split(root: Path) -> list[DetectionSample]:
-    dataset = CourtDataset(root, load_detections=True)
-    samples = []
-    for index in range(len(dataset)):
-        sample = dataset.load(index)
-        category_names = tuple(canonical_category(name) for name in sample["category_names"])
-        samples.append(
-            DetectionSample(
-                image_path=sample["image_path"],
-                boxes_xywh=sample["boxes_xywh"],
-                category_names=category_names,
-            )
-        )
-    if not samples:
+    pairs = dataset.image_annotation_pairs(root, "detections", ".npz")
+    if not pairs:
         raise ValueError(f"No image/detection pairs found under {root}")
-    return samples
+    return [load_sample(image_path, detection_path) for image_path, detection_path in pairs]
+
+
+def load_sample(image_path: Path, detection_path: Path) -> DetectionSample:
+    data = np.load(detection_path)
+    boxes_xywh = data["boxes_xywh"].astype(np.float32)
+    category_names = tuple(canonical_category(name) for name in data["category_names"].astype(str).tolist())
+    if len(boxes_xywh) != len(category_names):
+        raise ValueError(f"{detection_path} has {len(boxes_xywh)} boxes and {len(category_names)} category names")
+    return DetectionSample(image_path=image_path, boxes_xywh=boxes_xywh, category_names=category_names)
 
 
 def parse_classes(classes: str) -> tuple[str, ...]:

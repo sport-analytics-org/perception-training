@@ -103,7 +103,7 @@ def write_yolo_split(
         for box, category_name in zip(sample.boxes_xywh, sample.category_names, strict=True):
             if category_name not in selected_classes:
                 continue
-            values = [class_id(category_name, class_names), *box.tolist()]
+            values = [class_id(category_name, class_names), *normalized_xywh_to_center(box).tolist()]
             lines.append(" ".join(str(value) for value in values))
         (label_root / sample.image_path.with_suffix(".txt").name).write_text("\n".join(lines) + ("\n" if lines else ""))
 
@@ -154,12 +154,15 @@ def write_coco_split(samples: list[DetectionSample], output_root: Path, class_na
 
 
 def normalized_xywh_to_pixels(box: np.ndarray, width: int, height: int) -> tuple[float, float, float, float]:
-    x_center, y_center, box_width, box_height = box.tolist()
+    x, y, box_width, box_height = box.tolist()
     pixel_width = box_width * width
     pixel_height = box_height * height
-    x = x_center * width - pixel_width / 2
-    y = y_center * height - pixel_height / 2
-    return x, y, pixel_width, pixel_height
+    return x * width, y * height, pixel_width, pixel_height
+
+
+def normalized_xywh_to_center(box: np.ndarray) -> np.ndarray:
+    x, y, width, height = box.tolist()
+    return np.array([x + width / 2, y + height / 2, width, height], dtype=np.float32)
 
 
 def link_image(source: Path, destination: Path) -> None:

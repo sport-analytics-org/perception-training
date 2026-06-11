@@ -5,9 +5,8 @@ from pathlib import Path
 import numpy as np
 import torch
 import typer
-from jaxtyping import Float, UInt8
+from jaxtyping import Float
 from loguru import logger
-from sportanalytics import NbaCourt
 from torch import Tensor
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -15,14 +14,12 @@ from tqdm import tqdm
 
 from court_training.augment import CourtAugment
 from court_training.constants import TTA_SCALES
-from court_training.dataset import CourtDataset
+from court_training.dataset import BASKETBALL_KEYPOINT_NAMES, BASKETBALL_MASK_NAMES, CourtDataset
 from court_training.segmentation.model import CourtSegmenter
 
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
 
 
-BASKETBALL_MASK_NAMES = tuple(NbaCourt.areas())
-BASKETBALL_KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
 TRAIN_ROOT_ARGUMENT = typer.Argument(help="Flat exported training dataset root.")
 VAL_ROOT_ARGUMENT = typer.Argument(help="Flat exported validation dataset root.")
 OUTPUT_DIR_ARGUMENT = typer.Argument(help="Directory where checkpoints are written.")
@@ -60,7 +57,7 @@ def main(
     train_data = CourtDataset(
         train_root.expanduser().resolve(),
         image_size,
-        load_mask=load_mask,
+        load_masks=True,
         load_keypoints=True,
         transform=CourtAugment(
             mask_names=BASKETBALL_MASK_NAMES,
@@ -69,7 +66,7 @@ def main(
             crop_cutout=crop_cutout,
         ),
     )
-    eval_data = CourtDataset(val_root.expanduser().resolve(), image_size, load_mask=load_mask, load_keypoints=True)
+    eval_data = CourtDataset(val_root.expanduser().resolve(), image_size, load_masks=True, load_keypoints=True)
     train_loader = DataLoader(
         train_data,
         batch_size=batch_size,
@@ -272,11 +269,6 @@ def gaussian_heatmaps(
     distance = (grid_x - point_x).square() + (grid_y - point_y).square()
     heatmaps = torch.exp(-distance / (2 * sigma**2))
     return heatmaps * visibility[..., None, None]
-
-
-def load_mask(bitfield: UInt8[np.ndarray, "H W"]) -> Float[np.ndarray, "H W N"]:
-    masks = [(bitfield & (1 << bit)) > 0 for bit in range(len(BASKETBALL_MASK_NAMES))]
-    return np.stack(masks, axis=-1).astype(np.float32)
 
 
 def to_device(

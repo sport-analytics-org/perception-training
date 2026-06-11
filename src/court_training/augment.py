@@ -9,9 +9,9 @@ from court_training.flip import HorizontalFlip
 class CourtAugment:
     def __init__(
         self,
-        mask_names: tuple[str, ...],
-        keypoint_names: tuple[str, ...],
         image_size: tuple[int, int],
+        mask_names: tuple[str, ...] = (),
+        keypoint_names: tuple[str, ...] = (),
         crop_cutout: bool = True,
         crop_p: float = 0.7,
         cutout_p: float = 0.5,
@@ -62,25 +62,36 @@ class CourtAugment:
             transforms.insert(0, crop)
             transforms.append(cutout)
 
-        self.geom = A.Compose(transforms, keypoint_params=A.KeypointParams(format="xy", remove_invisible=False))
+        self.geom = A.Compose(
+            transforms,
+            keypoint_params=A.KeypointParams(format="xy", remove_invisible=False),
+            bbox_params=A.BboxParams(format="yolo", label_fields=["labels"], min_visibility=0.1, clip=True),
+        )
 
     def __call__(self, sample: NumpySample) -> NumpySample:
         height, width = sample["image"].shape[:2]
-        keypoints = normalized_to_pixels(sample["keypoints"], width, height)
-        transformed = self.geom(
-            image=sample["image"],
-            mask=sample["mask"],
-            keypoints=keypoints,
-        )
-        keypoints = pixels_to_normalized(transformed["keypoints"], width, height)
-        visibility = sample["visibility"] * points_inside_image(keypoints)
-        flipped = self.hflip(
-            image=transformed["image"],
-            mask=transformed["mask"],
-            keypoints=keypoints,
-            visibility=visibility,
-        )
-        return flipped
+        keypoints = sample.get("keypoints", np.zeros((0, 2), dtype=np.float32))
+        targets = {
+            "image": sample["image"],
+            "keypoints": normalized_to_pixels(keypoints, width, height),
+            "bboxes": sample.get("boxes_cxcywh", np.zeros((0, 4), dtype=np.float32)),
+            "labels": sample.get("labels", np.zeros(0, dtype=np.int64)),
+        }
+        if "mask" in sample:
+            targets["mask"] = sample["mask"]
+        transformed = self.geom(**targets)
+
+        output: NumpySample = {"image": transformed["image"]}
+        if "mask" in sample:
+            output["mask"] = transformed["mask"]
+        if "keypoints" in sample:
+            keypoints = pixels_to_normalized(transformed["keypoints"], width, height)
+            output["keypoints"] = keypoints
+            output["visibility"] = sample["visibility"] * points_inside_image(keypoints)
+        if "boxes_cxcywh" in sample:
+            output["boxes_cxcywh"] = np.array(transformed["bboxes"], dtype=np.float32).reshape(-1, 4)
+            output["labels"] = np.array(transformed["labels"], dtype=np.int64)
+        return self.hflip(output)
 
 
 def normalized_to_pixels(

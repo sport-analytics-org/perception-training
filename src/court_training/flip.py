@@ -17,35 +17,29 @@ class HorizontalFlip:
         self.keypoint_names = keypoint_names
         self.p = p
 
-    def __call__(
-        self,
-        image: Float[np.ndarray, "H W 3"],
-        mask: Float[np.ndarray, "H W N"],
-        keypoints: Float[np.ndarray, "K 2"],
-        visibility: Float[np.ndarray, "*K"],
-    ) -> NumpySample:
+    def __call__(self, sample: NumpySample) -> NumpySample:
         if np.random.random() >= self.p:
-            return {
-                "image": image,
-                "mask": mask,
-                "keypoints": keypoints,
-                "visibility": visibility,
-            }
+            return sample
 
         flipped = flip_numpy(
-            image=image,
-            masks=mask,
-            keypoints=keypoints,
-            visibility=visibility,
+            image=sample["image"],
+            masks=sample.get("mask"),
+            keypoints=sample.get("keypoints"),
+            visibility=sample.get("visibility"),
+            boxes_cxcywh=sample.get("boxes_cxcywh"),
             mask_names=self.mask_names,
             keypoint_names=self.keypoint_names,
         )
-        return {
-            "image": flipped["image"],
-            "mask": flipped["masks"],
-            "keypoints": flipped["keypoints"],
-            "visibility": flipped["visibility"],
-        }
+        output: NumpySample = {"image": flipped["image"]}
+        if "mask" in sample:
+            output["mask"] = flipped["masks"]
+        if "keypoints" in sample:
+            output["keypoints"] = flipped["keypoints"]
+            output["visibility"] = flipped["visibility"]
+        if "boxes_cxcywh" in sample:
+            output["boxes_cxcywh"] = flipped["boxes_cxcywh"]
+            output["labels"] = sample["labels"]
+        return output
 
 
 def flip_numpy(
@@ -53,6 +47,7 @@ def flip_numpy(
     masks: Float[np.ndarray, "... H W N"] | None = None,
     keypoints: Float[np.ndarray, "... K 2"] | None = None,
     visibility: Float[np.ndarray, "... K"] | None = None,
+    boxes_cxcywh: Float[np.ndarray, "... D 4"] | None = None,
     mask_names: tuple[str, ...] = (),
     keypoint_names: tuple[str, ...] = (),
 ) -> dict[str, np.ndarray]:
@@ -68,6 +63,10 @@ def flip_numpy(
         output["keypoints"] = np.take(keypoints, flip_indices(keypoint_names), axis=-2)
     if visibility is not None:
         output["visibility"] = np.take(visibility, flip_indices(keypoint_names), axis=-1)
+    if boxes_cxcywh is not None:
+        boxes_cxcywh = boxes_cxcywh.copy()
+        boxes_cxcywh[..., 0] = 1 - boxes_cxcywh[..., 0]
+        output["boxes_cxcywh"] = boxes_cxcywh
     return output
 
 

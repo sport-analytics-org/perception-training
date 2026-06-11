@@ -12,18 +12,21 @@ CENTERED_TARGET = np.array([(0.20, 0.40), (0.80, 0.40), (1.05, 0.90), (-0.05, 0.
 
 
 def fit_homography(
-    source_masks: Float[Tensor, "N H W"],
-    target_masks: Float[Tensor, "N H W"],
-    initial_homography: Float[Tensor, "3 3"],
+    source_masks: Float[Tensor, "... N H W"],
+    target_masks: Float[Tensor, "... N H W"],
+    initial_homography: Float[Tensor, "... 3 3"],
     multipliers: Float[Tensor, "*N"] | None = None,
-) -> Float[np.ndarray, "3 3"]:
-    if source_masks.shape[0] != target_masks.shape[0]:
-        raise ValueError(f"Got {source_masks.shape[0]} source masks and {target_masks.shape[0]} target masks")
+) -> Float[np.ndarray, "... 3 3"]:
+    if source_masks.shape[-3] != target_masks.shape[-3]:
+        raise ValueError(f"Got {source_masks.shape[-3]} source masks and {target_masks.shape[-3]} target masks")
 
     device = target_masks.device
     weights = area_weights(target_masks, multipliers)
     initial = initial_homography.to(device=device, dtype=target_masks.dtype)
-    params = torch.tensor([1, 0, 0, 0, 1, 0, 0, 0], dtype=target_masks.dtype, device=device, requires_grad=True)
+    params = torch.zeros(*target_masks.shape[:-3], 8, dtype=target_masks.dtype, device=device)
+    params[..., 0] = 1
+    params[..., 4] = 1
+    params.requires_grad_()
     optimizer = torch.optim.LBFGS([params], lr=0.6, max_iter=420, history_size=20, line_search_fn="strong_wolfe")
 
     def closure() -> Float[Tensor, ""]:
@@ -36,7 +39,7 @@ def fit_homography(
 
     optimizer.step(closure)
     homography = multiply_hom(initial, params.detach()).cpu().numpy()
-    return homography / homography[2, 2]
+    return homography
 
 
 def find_keypoints_homography(
@@ -64,24 +67,25 @@ def centered_homography() -> Float[np.ndarray, "3 3"]:
 
 
 def area_weights(
-    target_masks: Float[Tensor, "N H W"],
+    target_masks: Float[Tensor, "... N H W"],
     multipliers: Float[Tensor, "*N"] | None = None,
-) -> Float[Tensor, "*N"]:
-    areas = target_masks.sum(dim=(1, 2)).sqrt()
+) -> Float[Tensor, "... N"]:
+    areas = target_masks.sum(dim=(-2, -1)).sqrt()
     if multipliers is None:
         multipliers = torch.ones_like(areas)
     multipliers = multipliers.to(device=target_masks.device, dtype=target_masks.dtype)
     weights = areas * multipliers
-    return weights / weights.sum()
+    return weights / weights.sum(dim=-1, keepdim=True)
 
 
-def multiply_hom(hom: Float[Tensor, "3 3"], delta: Float[Tensor, "8"]) -> Float[Tensor, "3 3"]:
+def multiply_hom(hom: Float[Tensor, "... 3 3"], delta: Float[Tensor, "... 8"]) -> Float[Tensor, "... 3 3"]:
     update = torch.stack(
         [
-            torch.stack([delta[0], delta[1], delta[2]]),
-            torch.stack([delta[3], delta[4], delta[5]]),
-            torch.stack([delta[6], delta[7], torch.ones_like(delta[0])]),
-        ]
+            torch.stack([delta[..., 0], delta[..., 1], delta[..., 2]], dim=-1),
+            torch.stack([delta[..., 3], delta[..., 4], delta[..., 5]], dim=-1),
+            torch.stack([delta[..., 6], delta[..., 7], torch.ones_like(delta[..., 0])], dim=-1),
+        ],
+        dim=-2,
     )
     homography = hom @ update
-    return homography / homography[2, 2]
+    return homography / homography[..., 2:3, 2:3]

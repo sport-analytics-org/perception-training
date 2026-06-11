@@ -61,6 +61,32 @@ Predict segmentation masks and fit homographies:
 uv run python scripts/segmentation/predict_and_fit_homography.py /path/to/basketball-imgs /path/to/checkpoint.pt /path/to/report
 ```
 
+## Detection
+
+Export the basketball detection train/eval split:
+
+```bash
+uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/detection-dataset \
+  --train-dataset basketball_player_detection_2 \
+  --val-dataset e_bard_detection \
+  --no-masks \
+  --detections
+```
+
+Fine-tune RF-DETR Large on the exported split. Training consumes the flat layout directly,
+saves the checkpoint with the best validation mAP to `best.pt`, and defaults to the proven
+square `704x704` setup:
+
+```bash
+uv run python scripts/detection/train_rfdetr.py /path/to/detection-dataset/train /path/to/detection-dataset/val /path/to/runs/rfdetr
+```
+
+Evaluate a checkpoint, optionally with horizontal-flip TTA:
+
+```bash
+uv run python scripts/detection/evaluate_rfdetr.py /path/to/runs/rfdetr/best.pt /path/to/detection-dataset/val /path/to/runs/rfdetr/metrics.json --hflip
+```
+
 ## Homography fitting
 
 Fit a centered-initialization homography to a labeled basketball raster mask:

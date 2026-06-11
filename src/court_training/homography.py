@@ -4,7 +4,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from court_training.loss import dice_loss
+from court_training.segmentation.loss import dice_loss
 from court_training.warp import warp
 
 CENTERED_SOURCE = np.array([(0, 0), (1, 0), (1, 1), (0, 1)], dtype=np.float64)

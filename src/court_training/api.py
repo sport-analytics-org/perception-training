@@ -1,4 +1,5 @@
 import io
+import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -18,16 +19,12 @@ from torch import Tensor
 
 from court_training import homography
 from court_training.constants import TTA_SCALES
-from court_training.dataset import BASKETBALL_DETECTION_CLASSES
 from court_training.detection import inference
 from court_training.detection.model import CourtDetector
 from court_training.segmentation.inference import image_to_tensor
 from court_training.segmentation.model import CourtSegmenter
 
 IMAGE_SIZE = (360, 480)
-MASK_NAMES = tuple(NbaCourt.areas())
-KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
-DETECTION_RESOLUTION = 704
 
 
 class Point(BaseModel):
@@ -86,10 +83,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     )
-    # RF-DETR silently predicts zero boxes on MPS; the detector must stay on CPU there.
-    detection_device = torch.device("cpu") if device.type == "mps" else device
     app.state.segmenter = load_segmenter(Path(os.environ["COURT_SEGMENTATION_CHECKPOINT"]), device)
-    app.state.detector = load_detector(Path(os.environ["COURT_DETECTION_CHECKPOINT"]), detection_device)
+    app.state.detector = load_detector(Path(os.environ["COURT_DETECTION_CHECKPOINT"]), device)
     yield
 
 
@@ -134,19 +129,19 @@ def predict_segmentation(model: CourtSegmenter, image: Image.Image, threshold: f
     visibility = prediction["visibility"][0].sigmoid().cpu().numpy()
 
     return Segmentation(
-        polygons=mask_polygons(probabilities.numpy() >= threshold),
+        polygons=mask_polygons(probabilities.numpy() >= threshold, model.mask_names),
         keypoints=[
             Keypoint(position=(float(x), float(y)), visible=bool(score >= threshold))
             for (x, y), score in zip(keypoints, visibility, strict=True)
         ],
-        homography=fit_nba_homography(probabilities, keypoints, visibility),
+        homography=fit_nba_homography(probabilities, keypoints, visibility, model),
     )
 
 
-def mask_polygons(masks: Bool[np.ndarray, "N H W"]) -> list[Polygon]:
+def mask_polygons(masks: Bool[np.ndarray, "N H W"], labels: tuple[str, ...]) -> list[Polygon]:
     height, width = masks.shape[-2:]
     polygons = []
-    for label, mask in zip(MASK_NAMES, masks, strict=True):
+    for label, mask in zip(labels, masks, strict=True):
         contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for contour in contours:
             simplified = cv2.approxPolyDP(contour, 0.01 * cv2.arcLength(contour, closed=True), closed=True)
@@ -161,11 +156,14 @@ def fit_nba_homography(
     probabilities: Float[Tensor, "N H W"],
     keypoints: Float[np.ndarray, "K 2"],
     visibility: Float[np.ndarray, "K"],
+    model: CourtSegmenter,
 ) -> Homography | None:
     visible = visibility >= 0.5
     if visible.sum() < 4:
         return None
-    matrix, _, score = homography.fit_court(NbaCourt, MASK_NAMES, KEYPOINT_NAMES, probabilities, keypoints, visible)
+    matrix, _, score = homography.fit_court(
+        NbaCourt, model.mask_names, model.keypoint_names, probabilities, keypoints, visible
+    )
     return Homography(court="nba", matrix=matrix.cpu().tolist(), soft_iou=score)
 
 
@@ -195,12 +193,13 @@ def predict_detections(
 
 
 def load_segmenter(checkpoint: Path, device: torch.device) -> CourtSegmenter:
+    config = json.loads(checkpoint.with_name("config.json").read_text())
     model = CourtSegmenter(
-        num_masks=len(MASK_NAMES),
-        num_keypoints=len(KEYPOINT_NAMES),
-        mask_names=MASK_NAMES,
-        keypoint_names=KEYPOINT_NAMES,
-        backbone="vit_large_patch16_dinov3",
+        num_masks=len(config["mask_names"]),
+        num_keypoints=len(config["keypoint_names"]),
+        mask_names=tuple(config["mask_names"]),
+        keypoint_names=tuple(config["keypoint_names"]),
+        backbone=config["backbone"],
         pretrained=False,
     )
     model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
@@ -210,7 +209,8 @@ def load_segmenter(checkpoint: Path, device: torch.device) -> CourtSegmenter:
 
 
 def load_detector(checkpoint: Path, device: torch.device) -> CourtDetector:
-    model = CourtDetector(BASKETBALL_DETECTION_CLASSES, DETECTION_RESOLUTION, pretrained=False)
+    metadata = json.loads(checkpoint.with_name("metadata.json").read_text())
+    model = CourtDetector(tuple(metadata["classes"]), metadata["resolution"], pretrained=False)
     model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
     model.to(device)
     model.eval()

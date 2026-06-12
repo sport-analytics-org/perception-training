@@ -19,7 +19,6 @@ from court_training.constants import TTA_SCALES
 from court_training.dataset import BASKETBALL_DETECTION_CLASSES
 from court_training.detection import inference
 from court_training.detection.model import CourtDetector
-from court_training.device import prediction_device
 from court_training.segmentation.inference import image_to_tensor
 from court_training.segmentation.model import CourtSegmenter
 
@@ -31,7 +30,9 @@ DETECTION_RESOLUTION = 704
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    device = prediction_device()
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    )
     app.state.segmenter = load_segmenter(Path(os.environ["COURT_SEGMENTATION_CHECKPOINT"]), device)
     app.state.detector = load_detector(Path(os.environ["COURT_DETECTION_CHECKPOINT"]), device)
     yield

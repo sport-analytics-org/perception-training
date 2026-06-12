@@ -10,7 +10,6 @@ from tqdm import tqdm
 from court_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset
 from court_training.detection import inference, metrics
 from court_training.detection.model import CourtDetector
-from court_training.device import prediction_device
 
 app = typer.Typer(help="Evaluate an RF-DETR checkpoint on basketball detections.")
 
@@ -32,7 +31,9 @@ def main(
 ) -> None:
     val_data = CourtDataset(val_root.expanduser().resolve(), (resolution, resolution), load_bbox=True)
 
-    device = prediction_device()
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    )
     model = CourtDetector(BASKETBALL_DETECTION_CLASSES, resolution, pretrained=False)
     state_dict = torch.load(checkpoint.expanduser().resolve(), map_location="cpu", weights_only=True)
     model.load_state_dict(state_dict)

@@ -16,7 +16,6 @@ from tqdm import tqdm
 
 from court_training import homography
 from court_training.constants import TTA_SCALES
-from court_training.device import prediction_device
 from court_training.segmentation.inference import image_to_tensor
 from court_training.segmentation.model import CourtSegmenter
 from court_training.warp import warp
@@ -63,7 +62,9 @@ def main(
     panel_dir.mkdir(parents=True, exist_ok=True)
 
     image_paths = unlabelled_images(dataset_root)
-    device = prediction_device()
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    )
     model = load_model(checkpoint, device)
     rng = random.Random(seed)
     samples = sample_by_dataset(image_paths, count_per_dataset * 10, tuple(datasets), rng)

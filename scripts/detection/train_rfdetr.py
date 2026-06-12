@@ -161,7 +161,12 @@ def evaluate(model: CourtDetector, loader: DataLoader, device: torch.device) -> 
     for images, targets in tqdm(loader, desc="Evaluating", leave=False):
         predictions = model.predict(images.to(device))
         predictions = [{key: value.cpu() for key, value in prediction.items()} for prediction in predictions]
-        ground_truth = [{"boxes": target["boxes_xywh"], "labels": target["labels"]} for target in targets]
+        # TorchMetrics stores targets until compute(); clone off DataLoader shared-memory storage.
+        ground_truth = []
+        for target in targets:
+            boxes = target["boxes_xywh"].clone()
+            labels = target["labels"].clone()
+            ground_truth.append({"boxes": boxes, "labels": labels})
         metric.update(predictions, ground_truth)
     return metrics.summarize(metric, model.class_names)
 

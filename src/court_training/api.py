@@ -3,22 +3,24 @@ import io
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 import numpy as np
 import torch
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
+from jaxtyping import Bool, Float
 from PIL import Image
 from sportanalytics import NbaCourt
+from torch import Tensor
 
-from court_training import homography, warp
+from court_training import homography
 from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
 from court_training.dataset import BASKETBALL_DETECTION_CLASSES
-from court_training.detection import inference as detection_inference
+from court_training.detection import inference
 from court_training.detection.model import CourtDetector
 from court_training.segmentation.model import CourtSegmenter
+from court_training.warp import warp
 
 IMAGE_SIZE = (360, 480)
 MASK_NAMES = tuple(NbaCourt.areas())
@@ -26,18 +28,12 @@ KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
 DETECTION_RESOLUTION = 704
 
 
-@dataclass
-class Models:
-    segmenter: CourtSegmenter | None
-    detector: CourtDetector | None
-    device: torch.device
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    app.state.models = load_models()
+    device = prediction_device()
+    app.state.segmenter = load_segmenter(Path(os.environ["COURT_SEGMENTATION_CHECKPOINT"]), device)
+    app.state.detector = load_detector(Path(os.environ["COURT_DETECTION_CHECKPOINT"]), device)
     yield
-    app.state.models = Models(segmenter=None, detector=None, device=torch.device("cpu"))
 
 
 app = FastAPI(title="Court Training API", lifespan=lifespan)
@@ -45,13 +41,7 @@ app = FastAPI(title="Court Training API", lifespan=lifespan)
 
 @app.get("/health")
 def health() -> dict[str, object]:
-    models: Models = app.state.models
-    return {
-        "ok": True,
-        "device": str(models.device),
-        "segmentation": models.segmenter is not None,
-        "detection": models.detector is not None,
-    }
+    return {"ok": True, "device": str(app.state.segmenter.device)}
 
 
 @app.post("/predict")
@@ -63,32 +53,13 @@ async def predict(
     detection_threshold: Annotated[float, Form()] = 0.25,
     detection_hflip: Annotated[bool, Form()] = False,
 ) -> dict[str, object]:
-    models: Models = app.state.models
-    frame = read_image(await image.read())
+    frame = Image.open(io.BytesIO(await image.read())).convert("RGB")
     response: dict[str, object] = {}
-
     if segmentation:
-        if models.segmenter is None:
-            raise HTTPException(status_code=503, detail="Segmentation model is not loaded")
-        response["segmentation"] = predict_segmentation(models.segmenter, frame, models.device, segmentation_threshold)
-
+        response["segmentation"] = predict_segmentation(app.state.segmenter, frame, segmentation_threshold)
     if detection:
-        if models.detector is None:
-            raise HTTPException(status_code=503, detail="Detection model is not loaded")
-        response["detections"] = predict_detections(models.detector, frame, detection_threshold, detection_hflip)
-
+        response["detections"] = predict_detections(app.state.detector, frame, detection_threshold, detection_hflip)
     return response
-
-
-def load_models() -> Models:
-    device = prediction_device()
-    segmentation_checkpoint = os.getenv("COURT_SEGMENTATION_CHECKPOINT")
-    detection_checkpoint = os.getenv("COURT_DETECTION_CHECKPOINT")
-    segmenter = load_segmenter(Path(segmentation_checkpoint), device) if segmentation_checkpoint else None
-    detector = None
-    if detection_checkpoint:
-        detector = load_detector(Path(detection_checkpoint), device)
-    return Models(segmenter=segmenter, detector=detector, device=device)
 
 
 def load_segmenter(checkpoint: Path, device: torch.device) -> CourtSegmenter:
@@ -114,17 +85,9 @@ def load_detector(checkpoint: Path, device: torch.device) -> CourtDetector:
     return model
 
 
-def predict_segmentation(
-    model: CourtSegmenter,
-    image: Image.Image,
-    device: torch.device,
-    threshold: float,
-) -> dict[str, object]:
+def predict_segmentation(model: CourtSegmenter, image: Image.Image, threshold: float) -> dict[str, object]:
     resized = image.resize((IMAGE_SIZE[1], IMAGE_SIZE[0]), Image.Resampling.BILINEAR)
-    tensor = image_to_tensor(resized, device)
-    with torch.inference_mode():
-        prediction = model.predict(tensor, TTA_SCALES)
-
+    prediction = model.predict(image_to_tensor(resized, model.device), TTA_SCALES)
     probabilities = prediction["masks"][0].sigmoid().cpu()
     keypoints = prediction["keypoints"][0].cpu().numpy()
     visibility = prediction["visibility"][0].sigmoid().cpu().numpy()
@@ -153,37 +116,27 @@ def predict_segmentation(
 
 
 def fit_nba_homography(
-    probabilities: torch.Tensor,
-    keypoints: np.ndarray,
-    visibility: np.ndarray,
-) -> dict[str, object]:
+    probabilities: Float[Tensor, "N H W"],
+    keypoints: Float[np.ndarray, "K 2"],
+    visibility: Float[np.ndarray, "K"],
+) -> dict[str, object] | None:
     visible = visibility >= 0.5
     if visible.sum() < 4:
-        return {
-            "available": False,
-            "reason": f"Need at least 4 visible keypoints, got {int(visible.sum())}",
-        }
+        return None
 
     source_masks = homography.template_masks(NbaCourt, MASK_NAMES, probabilities.shape[-1], probabilities.device)
     source_keypoints = homography.normalized_keypoints(NbaCourt, KEYPOINT_NAMES)
     initial = torch.tensor(
         homography.find_keypoints_homography(source_keypoints[visible], keypoints[visible]),
         dtype=probabilities.dtype,
-        device=probabilities.device,
     )
     multipliers = torch.tensor(
         [1.5 if "3pt_area" in name or "painted_area" in name else 1.0 for name in MASK_NAMES],
-        dtype=probabilities.dtype,
         device=probabilities.device,
     )
     matrix = homography.fit_homography(source_masks, probabilities, initial, multipliers)
-    fitted = warp.warp(source_masks, matrix, probabilities.shape[-2:])
-    return {
-        "available": True,
-        "court": "nba",
-        "matrix": matrix.cpu().tolist(),
-        "soft_iou": homography.soft_iou(fitted, probabilities),
-    }
+    fitted = warp(source_masks, matrix, probabilities.shape[-2:])
+    return {"court": "nba", "matrix": matrix.cpu().tolist(), "soft_iou": homography.soft_iou(fitted, probabilities)}
 
 
 def predict_detections(
@@ -192,14 +145,7 @@ def predict_detections(
     threshold: float,
     hflip: bool,
 ) -> list[dict[str, object]]:
-    predictions = detection_inference.predict(
-        model,
-        image,
-        hflip=hflip,
-        threshold=threshold,
-        nms_iou=0.6,
-        max_detections=300,
-    )
+    predictions = inference.predict(model, image, hflip=hflip, threshold=threshold, nms_iou=0.6, max_detections=300)
     boxes = predictions["boxes"].tolist()
     scores = predictions["scores"].tolist()
     labels = predictions["labels"].tolist()
@@ -207,30 +153,19 @@ def predict_detections(
         {
             "label": model.class_names[label],
             "score": score,
-            "box": {
-                "x": box[0],
-                "y": box[1],
-                "width": box[2],
-                "height": box[3],
-            },
+            "box": {"x": box[0], "y": box[1], "width": box[2], "height": box[3]},
         }
         for box, score, label in zip(boxes, scores, labels, strict=True)
     ]
 
 
-def read_image(contents: bytes) -> Image.Image:
-    return Image.open(io.BytesIO(contents)).convert("RGB")
-
-
-def image_to_tensor(image: Image.Image, device: torch.device) -> torch.Tensor:
+def image_to_tensor(image: Image.Image, device: torch.device) -> Float[Tensor, "1 3 H W"]:
     image_array = np.asarray(image, dtype=np.float32) / 255.0
     tensor = torch.from_numpy(image_array).permute(2, 0, 1).to(device)
-    mean = IMAGE_MEAN.to(device)
-    std = IMAGE_STD.to(device)
-    return ((tensor - mean) / std)[None]
+    return ((tensor - IMAGE_MEAN.to(device)) / IMAGE_STD.to(device))[None]
 
 
-def encode_mask_png(mask: np.ndarray) -> str:
+def encode_mask_png(mask: Bool[np.ndarray, "H W"]) -> str:
     image = Image.fromarray(mask.astype(np.uint8) * 255, mode="L")
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")

@@ -90,7 +90,7 @@ def template_masks(
 def soft_iou(predicted: Float[Tensor, "N H W"], target: Float[Tensor, "N H W"]) -> float:
     intersection = torch.minimum(predicted, target).sum(dim=(1, 2))
     union = torch.maximum(predicted, target).sum(dim=(1, 2)).clamp_min(1e-6)
-    return float((intersection / union).mean().item())
+    return (intersection / union).mean().item()
 
 
 def area_weights(

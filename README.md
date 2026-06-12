@@ -89,8 +89,8 @@ uv run python scripts/detection/evaluate_rfdetr.py /path/to/runs/rfdetr/best.pt 
 
 ## API
 
-The API is a small FastAPI app for low-volume frontend inference. Models are loaded once at startup from environment
-variables and then reused for every request.
+The API is a small FastAPI app for low-volume frontend inference. Both models are loaded once at startup from
+environment variables and then reused for every request.
 
 ```bash
 export COURT_SEGMENTATION_CHECKPOINT=/path/to/segmentation/best.pt
@@ -113,8 +113,9 @@ curl -X POST http://localhost:8000/predict \
   -F detection=true
 ```
 
-The response contains segmentation masks as base64 PNG data URLs, normalized keypoints, homography, and detection boxes
-in normalized `xywh` format. Set either `segmentation=false` or `detection=false` to call only one model.
+The response contains segmentation masks as base64 PNG data URLs, normalized keypoints, the fitted homography (`null`
+when fewer than 4 keypoints are visible), and detection boxes in normalized `xywh` format. Set `segmentation=false` or
+`detection=false` to call only one model.
 
 ## Homography fitting
 

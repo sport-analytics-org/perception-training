@@ -40,4 +40,4 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["F722", "F821"]
 
 [tool.uv.sources]
-sport-analytics = { git = "ssh://git@github.com/sport-analytics-org/sport-analytics.git", branch = "relax-torch-pin" }
+sport-analytics = { git = "ssh://git@github.com/sport-analytics-org/sport-analytics.git" }

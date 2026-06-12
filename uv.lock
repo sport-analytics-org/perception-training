@@ -431,7 +431,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "rfdetr", extras = ["train"], specifier = ">=1.7.1" },
-    { name = "sport-analytics", git = "ssh://git@github.com/sport-analytics-org/sport-analytics.git?branch=relax-torch-pin" },
+    { name = "sport-analytics", git = "ssh://git@github.com/sport-analytics-org/sport-analytics.git" },
     { name = "timm", specifier = ">=1.0.27" },
     { name = "torch", specifier = ">=2.4" },
     { name = "torchmetrics", specifier = ">=1.9" },
@@ -2427,7 +2427,7 @@ wheels = [
 [[package]]
 name = "sport-analytics"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/sport-analytics-org/sport-analytics.git?branch=relax-torch-pin#3edc3510dee795c88c32ee906ade88e7b3566c14" }
+source = { git = "ssh://git@github.com/sport-analytics-org/sport-analytics.git#ee2da48f8677f38fac322f4bcec561a2d2dcf5cc" }
 dependencies = [
     { name = "jaxtyping" },
     { name = "loguru" },

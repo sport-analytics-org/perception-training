@@ -15,12 +15,13 @@ from sportanalytics import NbaCourt
 from torch import Tensor
 
 from court_training import homography
-from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
+from court_training.constants import TTA_SCALES
 from court_training.dataset import BASKETBALL_DETECTION_CLASSES
 from court_training.detection import inference
 from court_training.detection.model import CourtDetector
+from court_training.device import prediction_device
+from court_training.segmentation.inference import image_to_tensor
 from court_training.segmentation.model import CourtSegmenter
-from court_training.warp import warp
 
 IMAGE_SIZE = (360, 480)
 MASK_NAMES = tuple(NbaCourt.areas())
@@ -62,29 +63,6 @@ async def predict(
     return response
 
 
-def load_segmenter(checkpoint: Path, device: torch.device) -> CourtSegmenter:
-    model = CourtSegmenter(
-        num_masks=len(MASK_NAMES),
-        num_keypoints=len(KEYPOINT_NAMES),
-        mask_names=MASK_NAMES,
-        keypoint_names=KEYPOINT_NAMES,
-        backbone="vit_large_patch16_dinov3",
-        pretrained=False,
-    )
-    model.load_state_dict(torch.load(checkpoint.expanduser().resolve(), map_location="cpu", weights_only=True))
-    model.to(device)
-    model.eval()
-    return model
-
-
-def load_detector(checkpoint: Path, device: torch.device) -> CourtDetector:
-    model = CourtDetector(BASKETBALL_DETECTION_CLASSES, DETECTION_RESOLUTION, pretrained=False)
-    model.load_state_dict(torch.load(checkpoint.expanduser().resolve(), map_location="cpu", weights_only=True))
-    model.to(device)
-    model.eval()
-    return model
-
-
 def predict_segmentation(model: CourtSegmenter, image: Image.Image, threshold: float) -> dict[str, object]:
     resized = image.resize((IMAGE_SIZE[1], IMAGE_SIZE[0]), Image.Resampling.BILINEAR)
     prediction = model.predict(image_to_tensor(resized, model.device), TTA_SCALES)
@@ -123,20 +101,8 @@ def fit_nba_homography(
     visible = visibility >= 0.5
     if visible.sum() < 4:
         return None
-
-    source_masks = homography.template_masks(NbaCourt, MASK_NAMES, probabilities.shape[-1], probabilities.device)
-    source_keypoints = homography.normalized_keypoints(NbaCourt, KEYPOINT_NAMES)
-    initial = torch.tensor(
-        homography.find_keypoints_homography(source_keypoints[visible], keypoints[visible]),
-        dtype=probabilities.dtype,
-    )
-    multipliers = torch.tensor(
-        [1.5 if "3pt_area" in name or "painted_area" in name else 1.0 for name in MASK_NAMES],
-        device=probabilities.device,
-    )
-    matrix = homography.fit_homography(source_masks, probabilities, initial, multipliers)
-    fitted = warp(source_masks, matrix, probabilities.shape[-2:])
-    return {"court": "nba", "matrix": matrix.cpu().tolist(), "soft_iou": homography.soft_iou(fitted, probabilities)}
+    matrix, _, score = homography.fit_court(NbaCourt, MASK_NAMES, KEYPOINT_NAMES, probabilities, keypoints, visible)
+    return {"court": "nba", "matrix": matrix.cpu().tolist(), "soft_iou": score}
 
 
 def predict_detections(
@@ -159,12 +125,6 @@ def predict_detections(
     ]
 
 
-def image_to_tensor(image: Image.Image, device: torch.device) -> Float[Tensor, "1 3 H W"]:
-    image_array = np.asarray(image, dtype=np.float32) / 255.0
-    tensor = torch.from_numpy(image_array).permute(2, 0, 1).to(device)
-    return ((tensor - IMAGE_MEAN.to(device)) / IMAGE_STD.to(device))[None]
-
-
 def encode_mask_png(mask: Bool[np.ndarray, "H W"]) -> str:
     image = Image.fromarray(mask.astype(np.uint8) * 255, mode="L")
     buffer = io.BytesIO()
@@ -173,9 +133,24 @@ def encode_mask_png(mask: Bool[np.ndarray, "H W"]) -> str:
     return f"data:image/png;base64,{encoded}"
 
 
-def prediction_device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
+def load_segmenter(checkpoint: Path, device: torch.device) -> CourtSegmenter:
+    model = CourtSegmenter(
+        num_masks=len(MASK_NAMES),
+        num_keypoints=len(KEYPOINT_NAMES),
+        mask_names=MASK_NAMES,
+        keypoint_names=KEYPOINT_NAMES,
+        backbone="vit_large_patch16_dinov3",
+        pretrained=False,
+    )
+    model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
+    model.to(device)
+    model.eval()
+    return model
+
+
+def load_detector(checkpoint: Path, device: torch.device) -> CourtDetector:
+    model = CourtDetector(BASKETBALL_DETECTION_CLASSES, DETECTION_RESOLUTION, pretrained=False)
+    model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
+    model.to(device)
+    model.eval()
+    return model

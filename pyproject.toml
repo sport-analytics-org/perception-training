@@ -20,7 +20,7 @@ dependencies = [
     "torchmetrics>=1.9",
     "tqdm>=4.67.0",
     "typer>=0.15.0",
-    "uvicorn[standard]>=0.38.0",
+    "uvicorn>=0.38.0",
 ]
 
 [dependency-groups]

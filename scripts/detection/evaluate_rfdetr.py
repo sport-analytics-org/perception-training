@@ -10,6 +10,7 @@ from tqdm import tqdm
 from court_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset
 from court_training.detection import inference, metrics
 from court_training.detection.model import CourtDetector
+from court_training.device import prediction_device
 
 app = typer.Typer(help="Evaluate an RF-DETR checkpoint on basketball detections.")
 
@@ -59,14 +60,6 @@ def main(
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(results, indent=2) + "\n")
     typer.echo(json.dumps(results, indent=2))
-
-
-def prediction_device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
 
 
 if __name__ == "__main__":

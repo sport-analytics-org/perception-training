@@ -15,7 +15,9 @@ from torch import Tensor
 from tqdm import tqdm
 
 from court_training import homography
-from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
+from court_training.constants import TTA_SCALES
+from court_training.device import prediction_device
+from court_training.segmentation.inference import image_to_tensor
 from court_training.segmentation.model import CourtSegmenter
 from court_training.warp import warp
 
@@ -86,26 +88,16 @@ def main(
 
         court_name = "fiba" if dataset == "borgo" else "nba"
         court = FibaCourt if dataset == "borgo" else NbaCourt
-        source_masks = homography.template_masks(court, MASK_NAMES, probabilities.shape[-1], probabilities.device)
-        multipliers = torch.tensor(
-            [1.5 if "3pt_area" in name or "painted_area" in name else 1.0 for name in MASK_NAMES],
-            device=probabilities.device,
-        )
         visible = visibility >= 0.5
         if visible.sum() < 4:
             logger.info("Skipping {}: only {} visible keypoints", image_path, visible.sum())
             continue
-        source_keypoints = homography.normalized_keypoints(court, KEYPOINT_NAMES)
-        initial = torch.tensor(
-            homography.find_keypoints_homography(source_keypoints[visible], keypoints[visible]),
-            dtype=probabilities.dtype,
+        matrix, fitted, score = homography.fit_court(
+            court, MASK_NAMES, KEYPOINT_NAMES, probabilities, keypoints, visible
         )
-        fitted_homography = homography.fit_homography(source_masks, probabilities, initial, multipliers)
-        fitted = warp(source_masks, fitted_homography, probabilities.shape[-2:])
-        fitted_homography = fitted_homography.cpu().numpy()
+        fitted_homography = matrix.cpu().numpy()
         fitted_original = render_at_image_size(court, fitted_homography, original_image.size)
         fitted_keypoints, fitted_visibility = project_keypoints(court, fitted_homography)
-        score = homography.soft_iou(fitted, probabilities)
 
         save_labels(
             dataset_root,
@@ -165,20 +157,6 @@ def sample_by_dataset(image_paths: list[Path], count: int, datasets: tuple[str, 
         samples.extend(rng.sample(paths, count))
     rng.shuffle(samples)
     return samples
-
-
-def image_to_tensor(image: Image.Image, device: torch.device) -> Float[Tensor, "1 3 H W"]:
-    image_array = np.asarray(image, dtype=np.float32) / 255.0
-    tensor = torch.from_numpy(image_array).permute(2, 0, 1).to(device)
-    return ((tensor - IMAGE_MEAN.to(device)) / IMAGE_STD.to(device))[None]
-
-
-def prediction_device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
 
 
 def render_at_image_size(

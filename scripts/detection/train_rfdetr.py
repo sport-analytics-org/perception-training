@@ -1,3 +1,4 @@
+import json
 import random
 from pathlib import Path
 
@@ -43,6 +44,7 @@ def main(
     set_seed(seed)
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    write_metadata(output_dir, resolution)
     image_size = (resolution, resolution)
 
     train_data = CourtDataset(
@@ -169,6 +171,16 @@ def evaluate(model: CourtDetector, loader: DataLoader, device: torch.device) -> 
             ground_truth.append({"boxes": boxes, "labels": labels})
         metric.update(predictions, ground_truth)
     return metrics.summarize(metric, model.class_names)
+
+
+def write_metadata(output_dir: Path, resolution: int) -> None:
+    """Sidecar read by CourtDetector.load."""
+    metadata = {
+        "architecture": "RF-DETR Large",
+        "resolution": resolution,
+        "classes": list(BASKETBALL_DETECTION_CLASSES),
+    }
+    (output_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
 
 def set_seed(seed: int) -> None:

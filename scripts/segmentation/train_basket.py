@@ -1,3 +1,4 @@
+import json
 import random
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,7 +16,7 @@ from torchmetrics.classification import BinaryAccuracy, MultilabelJaccardIndex
 from tqdm import tqdm
 
 from court_training.augment import CourtAugment
-from court_training.constants import TTA_SCALES
+from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
 from court_training.dataset import BASKETBALL_KEYPOINT_NAMES, BASKETBALL_MASK_NAMES, CourtDataset
 from court_training.segmentation.model import CourtSegmenter
 
@@ -55,6 +56,7 @@ def main(
     output_dir = output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     image_size = (image_height, image_width)
+    write_config(output_dir, backbone, image_size)
 
     train_data = CourtDataset(
         train_root.expanduser().resolve(),
@@ -139,6 +141,19 @@ def train(
             logger.info("Saved {} with eval_mIoU={:.4f}", output_dir / "best.pt", best_miou)
     torch.save(model.state_dict(), output_dir / "final.pt")
     logger.info("Saved final checkpoint to {}", output_dir / "final.pt")
+
+
+def write_config(output_dir: Path, backbone: str, image_size: tuple[int, int]) -> None:
+    """Sidecar read by CourtSegmenter.load; checkpoints stay usable when the court vocabulary changes."""
+    config = {
+        "model_class": "CourtSegmenter",
+        "backbone": backbone,
+        "mask_names": list(BASKETBALL_MASK_NAMES),
+        "keypoint_names": list(BASKETBALL_KEYPOINT_NAMES),
+        "image_size": {"height": image_size[0], "width": image_size[1]},
+        "normalization": {"mean": IMAGE_MEAN.flatten().tolist(), "std": IMAGE_STD.flatten().tolist()},
+    }
+    (output_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
 
 def lr_decay_factor(epoch: int, epochs: int) -> float:

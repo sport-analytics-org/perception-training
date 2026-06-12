@@ -31,8 +31,6 @@ DATASETS_OPTION = typer.Option(
     help="Subdataset to sample. Can be passed multiple times.",
 )
 IMAGE_SIZE = (360, 480)
-MASK_NAMES = tuple(NbaCourt.areas())
-KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
 COLORS = np.array(
     [
         (58, 134, 255),
@@ -65,7 +63,7 @@ def main(
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     )
-    model = load_model(checkpoint, device)
+    model = CourtSegmenter.load(checkpoint, device)
     rng = random.Random(seed)
     samples = sample_by_dataset(image_paths, count_per_dataset * 10, tuple(datasets), rng)
     expected = count_per_dataset * len(datasets)
@@ -94,11 +92,11 @@ def main(
             logger.info("Skipping {}: only {} visible keypoints", image_path, visible.sum())
             continue
         matrix, fitted, score = homography.fit_court(
-            court, MASK_NAMES, KEYPOINT_NAMES, probabilities, keypoints, visible
+            court, model.mask_names, model.keypoint_names, probabilities, keypoints, visible
         )
         fitted_homography = matrix.cpu().numpy()
-        fitted_original = render_at_image_size(court, fitted_homography, original_image.size)
-        fitted_keypoints, fitted_visibility = project_keypoints(court, fitted_homography)
+        fitted_original = render_at_image_size(court, model.mask_names, fitted_homography, original_image.size)
+        fitted_keypoints, fitted_visibility = project_keypoints(court, model.keypoint_names, fitted_homography)
 
         save_labels(
             dataset_root,
@@ -121,21 +119,6 @@ def main(
 
     write_report(output_dir / "index.html", rows)
     logger.info("Wrote {}", output_dir / "index.html")
-
-
-def load_model(checkpoint: Path, device: torch.device) -> CourtSegmenter:
-    model = CourtSegmenter(
-        num_masks=len(MASK_NAMES),
-        num_keypoints=len(KEYPOINT_NAMES),
-        mask_names=MASK_NAMES,
-        keypoint_names=KEYPOINT_NAMES,
-        backbone="vit_large_patch16_dinov3",
-        pretrained=False,
-    )
-    model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True), strict=True)
-    model.to(device)
-    model.eval()
-    return model
 
 
 def unlabelled_images(dataset_root: Path) -> list[Path]:
@@ -162,20 +145,22 @@ def sample_by_dataset(image_paths: list[Path], count: int, datasets: tuple[str, 
 
 def render_at_image_size(
     court: BasketCourt,
+    mask_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
     size: tuple[int, int],
 ) -> Float[Tensor, "N H W"]:
     width, height = size
-    source_masks = homography.template_masks(court, MASK_NAMES, width, torch.device("cpu"))
+    source_masks = homography.template_masks(court, mask_names, width, torch.device("cpu"))
     homography_tensor = torch.tensor(matrix, dtype=source_masks.dtype)
     return warp(source_masks, homography_tensor, (height, width))
 
 
 def project_keypoints(
     court: BasketCourt,
+    keypoint_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
 ) -> tuple[Float[np.ndarray, "K 2"], Bool[np.ndarray, "K"]]:
-    points = homography.normalized_keypoints(court, KEYPOINT_NAMES)
+    points = homography.normalized_keypoints(court, keypoint_names)
     homogeneous = np.concatenate([points, np.ones((len(points), 1))], axis=1)
     projected = homogeneous @ matrix.T
     keypoints = projected[:, :2] / projected[:, 2:]
@@ -294,7 +279,7 @@ def draw_keypoints(
 def overlay(image: Image.Image, masks: Float[Tensor, "N H W"]) -> Image.Image:
     base = np.asarray(image.convert("RGB"), dtype=np.float32)
     alpha = masks.clamp(0, 1).numpy()[..., None] * 0.45
-    colors = COLORS[:, None, None, :]
+    colors = COLORS[np.arange(len(masks)) % len(COLORS)][:, None, None, :]
     overlay_rgb = (alpha * colors).sum(axis=0)
     total_alpha = np.clip(alpha.sum(axis=0), 0, 0.75)
     result = base * (1 - total_alpha) + overlay_rgb

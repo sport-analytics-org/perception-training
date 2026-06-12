@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import torch
@@ -43,6 +45,16 @@ class CourtDetector(nn.Module):
         losses = self.criterion(outputs, criterion_targets)
         weights = self.criterion.weight_dict
         return sum(losses[name] * weights[name] for name in losses if name in weights)
+
+    @classmethod
+    def load(cls, checkpoint: Path, device: torch.device) -> "CourtDetector":
+        """Build the model from the checkpoint's metadata.json sidecar and load its weights."""
+        metadata = json.loads(checkpoint.with_name("metadata.json").read_text())
+        model = cls(tuple(metadata["classes"]), metadata["resolution"], pretrained=False)
+        model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
+        model.to(device)
+        model.eval()
+        return model
 
     @torch.inference_mode()
     def predict(self, images: Float[Tensor, "B 3 H W"]) -> list[dict[str, Tensor]]:

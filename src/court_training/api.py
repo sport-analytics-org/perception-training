@@ -86,8 +86,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     )
+    # RF-DETR silently predicts zero boxes on MPS; the detector must stay on CPU there.
+    detection_device = torch.device("cpu") if device.type == "mps" else device
     app.state.segmenter = load_segmenter(Path(os.environ["COURT_SEGMENTATION_CHECKPOINT"]), device)
-    app.state.detector = load_detector(Path(os.environ["COURT_DETECTION_CHECKPOINT"]), device)
+    app.state.detector = load_detector(Path(os.environ["COURT_DETECTION_CHECKPOINT"]), detection_device)
     yield
 
 

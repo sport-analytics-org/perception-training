@@ -87,6 +87,36 @@ Evaluate a checkpoint, optionally with horizontal-flip TTA:
 uv run python scripts/detection/evaluate_rfdetr.py /path/to/runs/rfdetr/best.pt /path/to/detection-dataset/val /path/to/runs/rfdetr/metrics.json --hflip
 ```
 
+## API
+
+The API is a small FastAPI app for low-volume frontend inference. Both models are loaded once at startup from
+environment variables and then reused for every request.
+
+```bash
+export COURT_SEGMENTATION_CHECKPOINT=/path/to/segmentation/best.pt
+export COURT_DETECTION_CHECKPOINT=/path/to/rfdetr-large/checkpoint_best_total.pth
+uv run uvicorn court_training.api:app --host 0.0.0.0 --port 8000
+```
+
+Health check:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Predict segmentation and detections for one image:
+
+```bash
+curl -X POST http://localhost:8000/predict \
+  -F image=@frame.jpg \
+  -F segmentation=true \
+  -F detection=true
+```
+
+The response contains segmentation masks as base64 PNG data URLs, normalized keypoints, the fitted homography (`null`
+when fewer than 4 keypoints are visible), and detection boxes in normalized `xywh` format. Set `segmentation=false` or
+`detection=false` to call only one model.
+
 ## Homography fitting
 
 Fit a centered-initialization homography to a labeled basketball raster mask:

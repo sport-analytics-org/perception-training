@@ -31,7 +31,9 @@ def main(
 ) -> None:
     val_data = CourtDataset(val_root.expanduser().resolve(), (resolution, resolution), load_bbox=True)
 
-    device = prediction_device()
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    )
     model = CourtDetector(BASKETBALL_DETECTION_CLASSES, resolution, pretrained=False)
     state_dict = torch.load(checkpoint.expanduser().resolve(), map_location="cpu", weights_only=True)
     model.load_state_dict(state_dict)
@@ -59,14 +61,6 @@ def main(
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(results, indent=2) + "\n")
     typer.echo(json.dumps(results, indent=2))
-
-
-def prediction_device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
 
 
 if __name__ == "__main__":

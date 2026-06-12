@@ -3,6 +3,7 @@ from typing import Literal, NotRequired, TypedDict
 import numpy as np
 import torch
 from jaxtyping import Float
+from PIL import Image
 from sportanalytics import FibaCourt, NbaCourt
 from sportanalytics.court.basket import BasketCourt
 from torch import Tensor, nn
@@ -10,6 +11,7 @@ from torch.nn import functional as F
 
 import court_training.homography as homography
 import court_training.warp as warp
+from court_training.constants import IMAGE_MEAN, IMAGE_STD
 from court_training.flip import flip_torch
 
 CourtType = Literal["nba", "fiba"]
@@ -79,7 +81,7 @@ def fit_homography_to_masks(
     court: BasketCourt,
 ) -> Prediction:
     target_masks = prediction["masks"].sigmoid()
-    source_keypoints = normalized_keypoints(court, keypoint_names)
+    source_keypoints = homography.normalized_keypoints(court, keypoint_names)
     source_keypoints_tensor = torch.as_tensor(source_keypoints, dtype=target_masks.dtype, device=target_masks.device)
     width = target_masks.shape[-1]
     masks = []
@@ -111,12 +113,7 @@ def fit_homography_to_masks(
     }
 
 
-def normalized_keypoints(
-    court: BasketCourt,
-    keypoint_names: tuple[str, ...],
-) -> Float[np.ndarray, "K 2"]:
-    points_by_name = court.keypoints()
-    points = np.array([points_by_name[name] for name in keypoint_names], dtype=np.float64)
-    x = (points[:, 0] + court.half_length) / court.length
-    y = (points[:, 1] + court.half_width) / court.width
-    return np.stack([x, y], axis=1)
+def image_to_tensor(image: Image.Image, device: torch.device) -> Float[Tensor, "1 3 H W"]:
+    image_array = np.asarray(image, dtype=np.float32) / 255.0
+    tensor = torch.from_numpy(image_array).permute(2, 0, 1).to(device)
+    return ((tensor - IMAGE_MEAN.to(device)) / IMAGE_STD.to(device))[None]

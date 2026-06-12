@@ -395,6 +395,7 @@ dependencies = [
     { name = "sport-analytics" },
     { name = "timm" },
     { name = "torch" },
+    { name = "torchmetrics" },
     { name = "tqdm" },
     { name = "typer" },
 ]
@@ -416,6 +417,7 @@ requires-dist = [
     { name = "sport-analytics", git = "ssh://git@github.com/sport-analytics-org/sport-analytics.git" },
     { name = "timm", specifier = ">=1.0.27" },
     { name = "torch", specifier = ">=2.4" },
+    { name = "torchmetrics", specifier = ">=1.9" },
     { name = "tqdm", specifier = ">=4.67.0" },
     { name = "typer", specifier = ">=0.15.0" },
 ]

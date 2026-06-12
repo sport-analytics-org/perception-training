@@ -10,6 +10,8 @@ from loguru import logger
 from torch import Tensor
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
+from torchmetrics import MeanMetric
+from torchmetrics.classification import BinaryAccuracy, MultilabelJaccardIndex
 from tqdm import tqdm
 
 from court_training.augment import CourtAugment
@@ -193,12 +195,9 @@ def evaluate(
     num_masks: int,
 ) -> EvalMetrics:
     model.eval()
-    intersection = torch.zeros(num_masks, device=device)
-    union = torch.zeros(num_masks, device=device)
-    total_keypoint_error = 0.0
-    total_visible_keypoints = 0
-    total_visibility_correct = 0
-    total_visibility = 0
+    class_iou = MultilabelJaccardIndex(num_labels=num_masks, average=None).to(device)
+    keypoint_error = MeanMetric().to(device)
+    visibility_accuracy = BinaryAccuracy().to(device)
 
     for batch in tqdm(loader, desc="Evaluating", leave=False):
         tensors = to_device(batch, device)
@@ -206,25 +205,16 @@ def evaluate(
 
         visible = tensors["visibility"] > 0.5
         error = (prediction["keypoints"][visible] - tensors["keypoints"][visible]).norm(dim=-1)
-        total_keypoint_error += error.sum().item()
-        total_visible_keypoints += int(visible.sum().item())
-        total_visibility_correct += int(((prediction["visibility"].sigmoid() > 0.5) == visible).sum().item())
-        total_visibility += tensors["visibility"].numel()
+        keypoint_error.update(error)
+        visibility_accuracy.update(prediction["visibility"].sigmoid(), visible.int())
+        class_iou.update(prediction["masks"].sigmoid(), (tensors["mask"] > 0.5).int())
 
-        predictions = prediction["masks"].sigmoid() > 0.5
-        targets = tensors["mask"] > 0.5
-        intersection += (predictions & targets).sum(dim=(0, 2, 3))
-        union += (predictions | targets).sum(dim=(0, 2, 3))
-
-    class_iou = intersection / union.clamp_min(1)
-    miou = class_iou[union > 0].mean().item()
-    keypoint_error = total_keypoint_error / max(total_visible_keypoints, 1)
-    visibility_accuracy = total_visibility_correct / total_visibility
+    iou = class_iou.compute()
     return EvalMetrics(
-        miou=miou,
-        class_iou=tuple(class_iou.tolist()),
-        keypoint_error=keypoint_error,
-        visibility_accuracy=visibility_accuracy,
+        miou=iou.mean().item(),
+        class_iou=tuple(iou.tolist()),
+        keypoint_error=keypoint_error.compute().item(),
+        visibility_accuracy=visibility_accuracy.compute().item(),
     )
 
 

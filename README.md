@@ -113,9 +113,10 @@ curl -X POST http://localhost:8000/predict \
   -F detection=true
 ```
 
-The response contains segmentation masks as base64 PNG data URLs, normalized keypoints, the fitted homography (`null`
-when fewer than 4 keypoints are visible), and detection boxes in normalized `xywh` format. Set `segmentation=false` or
-`detection=false` to call only one model.
+The response matches the labeltool annotation schemas: mask polygons and keypoints (`{position, visible}`) in
+normalized coordinates, the fitted homography (`null` when fewer than 4 keypoints are visible), and detection boxes
+as pixel `bbox_xyxy` with `category_id` plus a `categories` list. Set `segmentation=false` or `detection=false` to
+call only one model.
 
 ## Homography fitting
 

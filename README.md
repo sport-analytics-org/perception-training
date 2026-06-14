@@ -88,6 +88,15 @@ Evaluate a checkpoint, optionally with horizontal-flip TTA:
 uv run python scripts/detection/evaluate_rfdetr.py /path/to/runs/rfdetr/best.pt /path/to/detection-dataset/val /path/to/runs/rfdetr/metrics.json --hflip
 ```
 
+## Published checkpoints
+
+The latest trained basketball models are published in the HuggingFace model repo `sport-analytics/checkpoints`.
+Download or clone the repo so each checkpoint stays next to its sidecar config/metadata file, then load the
+segmentation model from `basket-court-segmentation/vit-large-basket-seg-keypoints.pt` and the detection model from
+`court-detection/rfdetr-large-allclasses-640/best.pt`. `CourtSegmenter.load(...)` and `CourtDetector.load(...)` read
+those sidecars automatically, and the API can use the same paths via `COURT_SEGMENTATION_CHECKPOINT` and
+`COURT_DETECTION_CHECKPOINT`.
+
 ## API
 
 The API is a small FastAPI app for low-volume frontend inference. Both models are loaded once at startup from

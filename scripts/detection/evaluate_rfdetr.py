@@ -23,7 +23,7 @@ def main(
     checkpoint: Path = CHECKPOINT_ARGUMENT,
     val_root: Path = VAL_ROOT_ARGUMENT,
     output_json: Path = OUTPUT_JSON_ARGUMENT,
-    resolution: int = typer.Option(704, help="Square inference resolution."),
+    resolution: int = typer.Option(640, help="Square inference resolution."),
     hflip: bool = typer.Option(False, "--hflip/--no-hflip", help="Use horizontal-flip TTA."),
     threshold: float = typer.Option(0.001, help="Confidence threshold before NMS and mAP evaluation."),
     nms_iou: float = typer.Option(0.6, help="Per-class NMS IoU threshold after TTA merge."),

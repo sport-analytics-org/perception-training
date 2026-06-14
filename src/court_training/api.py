@@ -1,5 +1,4 @@
 import io
-import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -83,8 +82,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     )
-    app.state.segmenter = load_segmenter(Path(os.environ["COURT_SEGMENTATION_CHECKPOINT"]), device)
-    app.state.detector = load_detector(Path(os.environ["COURT_DETECTION_CHECKPOINT"]), device)
+    segmentation_checkpoint = Path(os.environ["COURT_SEGMENTATION_CHECKPOINT"])
+    detection_checkpoint = Path(os.environ["COURT_DETECTION_CHECKPOINT"])
+    app.state.segmenter = CourtSegmenter.load(segmentation_checkpoint, device)
+    app.state.detector = CourtDetector.load(detection_checkpoint, device)
     yield
 
 
@@ -191,27 +192,3 @@ def predict_detections(
     categories = [DetectionCategory(id=index, name=name) for index, name in enumerate(model.class_names)]
     return Detections(categories=categories, boxes=boxes)
 
-
-def load_segmenter(checkpoint: Path, device: torch.device) -> CourtSegmenter:
-    config = json.loads(checkpoint.with_name("config.json").read_text())
-    model = CourtSegmenter(
-        num_masks=len(config["mask_names"]),
-        num_keypoints=len(config["keypoint_names"]),
-        mask_names=tuple(config["mask_names"]),
-        keypoint_names=tuple(config["keypoint_names"]),
-        backbone=config["backbone"],
-        pretrained=False,
-    )
-    model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
-    model.to(device)
-    model.eval()
-    return model
-
-
-def load_detector(checkpoint: Path, device: torch.device) -> CourtDetector:
-    metadata = json.loads(checkpoint.with_name("metadata.json").read_text())
-    model = CourtDetector(tuple(metadata["classes"]), metadata["resolution"], pretrained=False)
-    model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
-    model.to(device)
-    model.eval()
-    return model

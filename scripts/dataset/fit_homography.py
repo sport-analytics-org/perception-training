@@ -21,9 +21,6 @@ COURTS = {
     "nba": NbaCourt,
     "fiba": FibaCourt,
 }
-MASK_NAMES = tuple(NbaCourt.areas())
-
-
 @app.command()
 def main(
     mask: Path = MASK_ARGUMENT,
@@ -32,7 +29,7 @@ def main(
     mask_path = mask.expanduser().resolve()
 
     court_template = COURTS[court]
-    labels, target_masks = load_masks(mask_path)
+    labels, target_masks = load_masks(mask_path, court_template)
     source_masks = load_template_masks(court_template, labels, target_masks.shape[-1])
 
     mask_multipliers = [1.5 if "3pt_area" in label or "painted_area" in label else 1.0 for label in labels]
@@ -57,15 +54,17 @@ def main(
     print(json.dumps(result, indent=2))
 
 
-def load_masks(mask_path: Path) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
-    bitfield: UInt8[np.ndarray, "H W"] = np.asarray(Image.open(mask_path).convert("L"), dtype=np.uint8)
+def load_masks(mask_path: Path, court: BasketCourt) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
+    image = Image.open(mask_path).convert("L")
+    bitfield: UInt8[np.ndarray, "H W"] = np.asarray(image, dtype=np.uint8)
+    mask_names = tuple(court.planar_areas())
 
     masks = []
-    for index in range(len(MASK_NAMES)):
+    for index in range(len(mask_names)):
         mask = (bitfield & np.uint8(1 << index)) > 0
         masks.append(torch.tensor(mask.astype(np.float32)))
 
-    return MASK_NAMES, torch.stack(masks)
+    return mask_names, torch.stack(masks)
 
 
 def load_template_masks(

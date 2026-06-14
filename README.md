@@ -74,11 +74,12 @@ uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/detect
 ```
 
 Fine-tune RF-DETR Large on the exported split. Training consumes the flat layout directly,
-saves the checkpoint with the best validation mAP to `best.pt`, and defaults to the proven
-square `704x704` setup:
+saves the checkpoint with the best validation mAP to `best.pt`, and defaults to the
+square `640x640` setup:
 
 ```bash
-uv run python scripts/detection/train_rfdetr.py /path/to/detection-dataset/train /path/to/detection-dataset/val /path/to/runs/rfdetr
+uv run python scripts/detection/train_rfdetr.py /path/to/detection-dataset/train /path/to/runs/rfdetr \
+  --val-root /path/to/detection-dataset/val
 ```
 
 Evaluate a checkpoint, optionally with horizontal-flip TTA:

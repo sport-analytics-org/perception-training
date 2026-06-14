@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import timm
 import torch
 from jaxtyping import Float
@@ -81,6 +84,24 @@ class CourtSegmenter(nn.Module):
             padded_images.shape[-1] // patch_width,
         )
         return features
+
+    @classmethod
+    def load(cls, checkpoint: Path, device: torch.device) -> "CourtSegmenter":
+        """Build the model from the checkpoint's config.json sidecar and load its weights."""
+        config = json.loads(checkpoint.with_name("config.json").read_text())
+        model = cls(
+            num_masks=len(config["mask_names"]),
+            num_keypoints=len(config["keypoint_names"]),
+            mask_names=tuple(config["mask_names"]),
+            keypoint_names=tuple(config["keypoint_names"]),
+            backbone=config["backbone"],
+            pretrained=False,
+        )
+        state_dict = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        model.load_state_dict(state_dict)
+        model.to(device)
+        model.eval()
+        return model
 
     @torch.no_grad()
     def predict(

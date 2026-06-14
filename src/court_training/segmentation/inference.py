@@ -80,7 +80,9 @@ def fit_homography_to_masks(
     keypoint_names: tuple[str, ...],
     court: BasketCourt,
 ) -> Prediction:
-    target_masks = prediction["masks"].sigmoid()
+    mask_names = tuple(court.planar_areas())
+    mask_count = len(mask_names)
+    target_masks = prediction["masks"][:, :mask_count].sigmoid()
     source_keypoints = homography.normalized_keypoints(court, keypoint_names)
     source_keypoints_tensor = torch.as_tensor(source_keypoints, dtype=target_masks.dtype, device=target_masks.device)
     width = target_masks.shape[-1]

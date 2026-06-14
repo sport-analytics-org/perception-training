@@ -97,7 +97,8 @@ class CourtSegmenter(nn.Module):
             backbone=config["backbone"],
             pretrained=False,
         )
-        model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
+        state_dict = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        model.load_state_dict(state_dict)
         model.to(device)
         model.eval()
         return model

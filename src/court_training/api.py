@@ -82,8 +82,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     )
-    app.state.segmenter = CourtSegmenter.load(Path(os.environ["COURT_SEGMENTATION_CHECKPOINT"]), device)
-    app.state.detector = CourtDetector.load(Path(os.environ["COURT_DETECTION_CHECKPOINT"]), device)
+    segmentation_checkpoint = Path(os.environ["COURT_SEGMENTATION_CHECKPOINT"])
+    detection_checkpoint = Path(os.environ["COURT_DETECTION_CHECKPOINT"])
+    app.state.segmenter = CourtSegmenter.load(segmentation_checkpoint, device)
+    app.state.detector = CourtDetector.load(detection_checkpoint, device)
     yield
 
 
@@ -189,5 +191,4 @@ def predict_detections(
     ]
     categories = [DetectionCategory(id=index, name=name) for index, name in enumerate(model.class_names)]
     return Detections(categories=categories, boxes=boxes)
-
 

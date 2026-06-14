@@ -19,6 +19,7 @@ app = typer.Typer(help="Fine-tune RF-DETR Large on basketball detections.")
 
 TRAIN_ROOT_ARGUMENT = typer.Argument(help="Flat exported training dataset root.")
 OUTPUT_DIR_ARGUMENT = typer.Argument(help="Directory where checkpoints are written.")
+VAL_ROOT_OPTION = typer.Option(None, help="Optional flat exported validation dataset root.")
 
 CLIP_MAX_NORM = 0.1
 
@@ -27,7 +28,7 @@ CLIP_MAX_NORM = 0.1
 def main(
     train_root: Path = TRAIN_ROOT_ARGUMENT,
     output_dir: Path = OUTPUT_DIR_ARGUMENT,
-    val_root: Path | None = typer.Option(None, help="Optional flat exported validation dataset root."),
+    val_root: Path | None = VAL_ROOT_OPTION,
     epochs: int = typer.Option(6, help="Training epochs."),
     batch_size: int = typer.Option(8, help="Training batch size."),
     learning_rate: float = typer.Option(1e-4, help="Detector learning rate."),
@@ -36,7 +37,7 @@ def main(
     warmup_epochs: float = typer.Option(0.5, help="Linear warmup duration in epochs."),
     weight_decay: float = typer.Option(1e-4, help="Weight decay."),
     num_workers: int = typer.Option(8, help="DataLoader workers."),
-    resolution: int = typer.Option(704, help="Square training resolution."),
+    resolution: int = typer.Option(640, help="Square training resolution."),
     val_max_samples: int = typer.Option(800, help="Use at most this many validation images during training."),
     seed: int = typer.Option(51, help="Random seed."),
 ) -> None:
@@ -106,15 +107,14 @@ def train(
         logger.info("Epoch {}/{} train_loss={:.4f}", epoch, epochs, train_loss)
         if eval_loader is not None:
             eval_metrics = evaluate(model, eval_loader, device)
-            logger.info(
-                "Eval mAP50_95={:.4f} mAP50={:.4f} mAP75={:.4f}",
-                eval_metrics["map50_95"],
-                eval_metrics["map50"],
-                eval_metrics["map75"],
-            )
-            logger.info("Eval per-class mAP={}", eval_metrics["per_class_map"])
-            if eval_metrics["map50_95"] >= best_map:
-                best_map = eval_metrics["map50_95"]
+            map50_95 = eval_metrics["map50_95"]
+            map50 = eval_metrics["map50"]
+            map75 = eval_metrics["map75"]
+            per_class_map = eval_metrics["per_class_map"]
+            logger.info("Eval mAP50_95={:.4f} mAP50={:.4f} mAP75={:.4f}", map50_95, map50, map75)
+            logger.info("Eval per-class mAP={}", per_class_map)
+            if map50_95 >= best_map:
+                best_map = map50_95
                 torch.save(model.state_dict(), output_dir / "best.pt")
                 logger.info("Saved {} with eval_mAP50_95={:.4f}", output_dir / "best.pt", best_map)
     torch.save(model.state_dict(), output_dir / "final.pt")

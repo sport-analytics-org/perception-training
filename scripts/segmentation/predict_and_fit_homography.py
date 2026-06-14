@@ -87,15 +87,17 @@ def main(
 
         court_name = "fiba" if dataset == "borgo" else "nba"
         court = FibaCourt if dataset == "borgo" else NbaCourt
+        homography_mask_names = tuple(court.planar_areas())
+        homography_probabilities = probabilities[: len(homography_mask_names)]
         visible = visibility >= 0.5
         if visible.sum() < 4:
             logger.info("Skipping {}: only {} visible keypoints", image_path, visible.sum())
             continue
         matrix, fitted, score = homography.fit_court(
-            court, model.mask_names, model.keypoint_names, probabilities, keypoints, visible
+            court, homography_mask_names, model.keypoint_names, homography_probabilities, keypoints, visible
         )
         fitted_homography = matrix.cpu().numpy()
-        fitted_original = render_at_image_size(court, model.mask_names, fitted_homography, original_image.size)
+        fitted_original = render_at_image_size(court, homography_mask_names, fitted_homography, original_image.size)
         fitted_keypoints, fitted_visibility = project_keypoints(court, model.keypoint_names, fitted_homography)
 
         save_labels(
@@ -109,7 +111,17 @@ def main(
             score,
         )
         panel_path = panel_dir / f"{len(rows):02d}_{image_path.stem}.jpg"
-        make_panel(image, probabilities, fitted, keypoints, visibility, image_path, court_name, score, panel_path)
+        make_panel(
+            image,
+            homography_probabilities,
+            fitted,
+            keypoints,
+            visibility,
+            image_path,
+            court_name,
+            score,
+            panel_path,
+        )
         rows.append((image_path.relative_to(dataset_root), panel_path.relative_to(output_dir), court_name, score))
         counts[dataset] += 1
 

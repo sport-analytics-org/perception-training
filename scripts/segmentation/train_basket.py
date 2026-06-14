@@ -24,8 +24,8 @@ app = typer.Typer(help="Train a basketball court-mask segmenter.")
 
 
 TRAIN_ROOT_ARGUMENT = typer.Argument(help="Flat exported training dataset root.")
-VAL_ROOT_ARGUMENT = typer.Argument(help="Flat exported validation dataset root.")
 OUTPUT_DIR_ARGUMENT = typer.Argument(help="Directory where checkpoints are written.")
+VAL_ROOT_OPTION = typer.Option(None, help="Optional flat exported validation dataset root.")
 
 
 @dataclass(frozen=True)
@@ -39,8 +39,8 @@ class EvalMetrics:
 @app.command()
 def main(
     train_root: Path = TRAIN_ROOT_ARGUMENT,
-    val_root: Path = VAL_ROOT_ARGUMENT,
     output_dir: Path = OUTPUT_DIR_ARGUMENT,
+    val_root: Path | None = VAL_ROOT_OPTION,
     backbone: str = typer.Option("vit_large_patch16_dinov3", help="timm backbone name."),
     epochs: int = typer.Option(40, help="Training epochs."),
     batch_size: int = typer.Option(2, help="Training batch size."),
@@ -70,19 +70,23 @@ def main(
             crop_cutout=crop_cutout,
         ),
     )
-    eval_data = CourtDataset(val_root.expanduser().resolve(), image_size, load_masks=True, load_keypoints=True)
     train_loader = DataLoader(
         train_data,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
     )
-    eval_loader = DataLoader(
-        eval_data,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-    )
+    eval_loader = None
+    eval_count = 0
+    if val_root is not None:
+        eval_data = CourtDataset(val_root.expanduser().resolve(), image_size, load_masks=True, load_keypoints=True)
+        eval_count = len(eval_data)
+        eval_loader = DataLoader(
+            eval_data,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+        )
 
     device = training_device()
     num_masks = len(BASKETBALL_MASK_NAMES)
@@ -99,7 +103,7 @@ def main(
         group["initial_lr"] = learning_rate
 
     logger.info("Training {} on {}", backbone, device)
-    logger.info("Train images: {} | Eval images: {} | crop_cutout={}", len(train_data), len(eval_data), crop_cutout)
+    logger.info("Train images: {} | Eval images: {} | crop_cutout={}", len(train_data), eval_count, crop_cutout)
     logger.info("Masks: {}", num_masks)
     logger.info("Keypoints: {}", num_keypoints)
     train(model, optimizer, train_loader, eval_loader, device, output_dir, epochs, num_masks, keypoint_loss_weight)
@@ -109,7 +113,7 @@ def train(
     model: CourtSegmenter,
     optimizer: torch.optim.Optimizer,
     train_loader: DataLoader,
-    eval_loader: DataLoader,
+    eval_loader: DataLoader | None,
     device: torch.device,
     output_dir: Path,
     epochs: int,
@@ -127,31 +131,36 @@ def train(
             device,
             keypoint_loss_weight,
         )
-        metrics = evaluate(model, eval_loader, device, num_masks)
         logger.info("Epoch {}/{} lr_factor={:.3f}", epoch, epochs, learning_rate_factor)
         logger.info("Epoch {}/{} train_seg_loss={:.4f}", epoch, epochs, train_seg_loss)
         logger.info("Epoch {}/{} train_keypoint_loss={:.4f}", epoch, epochs, train_keypoint_loss)
-        logger.info("Eval mIoU={:.4f}", metrics.miou)
-        logger.info("Eval class_iou={}", format_scores(metrics.class_iou))
-        logger.info("Keypoints error={:.4f}", metrics.keypoint_error)
-        logger.info("Visibility acc={:.3f}", metrics.visibility_accuracy)
-        if metrics.miou >= best_miou:
-            best_miou = metrics.miou
-            torch.save(model.state_dict(), output_dir / "best.pt")
-            logger.info("Saved {} with eval_mIoU={:.4f}", output_dir / "best.pt", best_miou)
+        if eval_loader is not None:
+            metrics = evaluate(model, eval_loader, device, num_masks)
+            logger.info("Eval mIoU={:.4f}", metrics.miou)
+            logger.info("Eval class_iou={}", format_scores(metrics.class_iou))
+            logger.info("Keypoints error={:.4f}", metrics.keypoint_error)
+            logger.info("Visibility acc={:.3f}", metrics.visibility_accuracy)
+            if metrics.miou >= best_miou:
+                best_miou = metrics.miou
+                torch.save(model.state_dict(), output_dir / "best.pt")
+                logger.info("Saved {} with eval_mIoU={:.4f}", output_dir / "best.pt", best_miou)
     torch.save(model.state_dict(), output_dir / "final.pt")
     logger.info("Saved final checkpoint to {}", output_dir / "final.pt")
 
 
 def write_config(output_dir: Path, backbone: str, image_size: tuple[int, int]) -> None:
     """Sidecar read by CourtSegmenter.load; checkpoints stay usable when the court vocabulary changes."""
+    normalization = {
+        "mean": IMAGE_MEAN.flatten().tolist(),
+        "std": IMAGE_STD.flatten().tolist(),
+    }
     config = {
         "model_class": "CourtSegmenter",
         "backbone": backbone,
         "mask_names": list(BASKETBALL_MASK_NAMES),
         "keypoint_names": list(BASKETBALL_KEYPOINT_NAMES),
         "image_size": {"height": image_size[0], "width": image_size[1]},
-        "normalization": {"mean": IMAGE_MEAN.flatten().tolist(), "std": IMAGE_STD.flatten().tolist()},
+        "normalization": normalization,
     }
     (output_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 

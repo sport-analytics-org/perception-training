@@ -51,7 +51,8 @@ class CourtDetector(nn.Module):
         """Build the model from the checkpoint's metadata.json sidecar and load its weights."""
         metadata = json.loads(checkpoint.with_name("metadata.json").read_text())
         model = cls(tuple(metadata["classes"]), metadata["resolution"], pretrained=False)
-        model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
+        state_dict = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        model.load_state_dict(state_dict)
         model.to(device)
         model.eval()
         return model

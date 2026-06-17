@@ -23,22 +23,16 @@ def main(
     checkpoint: Path = CHECKPOINT_ARGUMENT,
     val_root: Path = VAL_ROOT_ARGUMENT,
     output_json: Path = OUTPUT_JSON_ARGUMENT,
-    resolution: int = typer.Option(640, help="Square inference resolution."),
     hflip: bool = typer.Option(False, "--hflip/--no-hflip", help="Use horizontal-flip TTA."),
     threshold: float = typer.Option(0.001, help="Confidence threshold before NMS and mAP evaluation."),
     nms_iou: float = typer.Option(0.6, help="Per-class NMS IoU threshold after TTA merge."),
     max_detections: int = typer.Option(300, help="Maximum detections per image after NMS."),
 ) -> None:
-    val_data = CourtDataset(val_root.expanduser().resolve(), (resolution, resolution), load_bbox=True)
-
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     )
-    model = CourtDetector(BASKETBALL_DETECTION_CLASSES, resolution, pretrained=False)
-    state_dict = torch.load(checkpoint.expanduser().resolve(), map_location="cpu", weights_only=True)
-    model.load_state_dict(state_dict)
-    model.to(device)
-    model.eval()
+    model = CourtDetector.load(checkpoint.expanduser().resolve(), device)
+    val_data = CourtDataset(val_root.expanduser().resolve(), model.image_size, load_bbox=True)
 
     metric = MeanAveragePrecision(box_format="xywh", class_metrics=True)
     for image_path in tqdm(val_data.image_paths, desc="Evaluating"):

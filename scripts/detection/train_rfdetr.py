@@ -8,8 +8,10 @@ import typer
 from loguru import logger
 from torch.utils.data import DataLoader, Subset
 from torchmetrics.detection import MeanAveragePrecision
+from torchvision.ops import box_convert
 from tqdm import tqdm
 
+from court_training import image_io
 from court_training.augment import CourtAugment
 from court_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset, collate
 from court_training.detection import metrics
@@ -78,7 +80,7 @@ def main(
         )
 
     device = training_device()
-    model = CourtDetector(BASKETBALL_DETECTION_CLASSES, resolution).to(device)
+    model = CourtDetector(BASKETBALL_DETECTION_CLASSES, image_size).to(device)
     optimizer = torch.optim.AdamW(model.param_groups(learning_rate, lr_encoder, weight_decay))
     for group in optimizer.param_groups:
         group["initial_lr"] = group["lr"]
@@ -165,8 +167,9 @@ def evaluate(model: CourtDetector, loader: DataLoader, device: torch.device) -> 
     model.eval()
     metric = MeanAveragePrecision(box_format="xywh", class_metrics=True)
     for images, targets in tqdm(loader, desc="Evaluating", leave=False):
-        predictions = model.predict(images.to(device))
-        predictions = [{key: value.cpu() for key, value in prediction.items()} for prediction in predictions]
+        batch_images = [image_io.tensor2image(image) for image in images.to(device)]
+        detections = model.predict(batch_images)
+        predictions = [detections_to_torchmetrics(detection) for detection in detections]
         # TorchMetrics stores targets until compute(); clone off DataLoader shared-memory storage.
         ground_truth = []
         for target in targets:
@@ -177,14 +180,23 @@ def evaluate(model: CourtDetector, loader: DataLoader, device: torch.device) -> 
     return metrics.summarize(metric, model.class_names)
 
 
+def detections_to_torchmetrics(detections) -> dict[str, torch.Tensor]:
+    boxes = torch.from_numpy(detections.xyxy).to(dtype=torch.float32)
+    return {
+        "boxes": box_convert(boxes, "xyxy", "xywh"),
+        "scores": torch.from_numpy(detections.confidence).to(dtype=torch.float32),
+        "labels": torch.from_numpy(detections.class_id).to(dtype=torch.long),
+    }
+
+
 def write_metadata(output_dir: Path, resolution: int) -> None:
     """Sidecar read by CourtDetector.load."""
     metadata = {
         "architecture": "RF-DETR Large",
-        "resolution": resolution,
+        "image_size": {"height": resolution, "width": resolution},
         "classes": list(BASKETBALL_DETECTION_CLASSES),
     }
-    (output_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    (output_dir / "args.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
 
 def set_seed(seed: int) -> None:

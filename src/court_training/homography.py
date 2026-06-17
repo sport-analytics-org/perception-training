@@ -10,6 +10,7 @@ from court_training.warp import warp
 
 CENTERED_SOURCE = np.array([(0, 0), (1, 0), (1, 1), (0, 1)], dtype=np.float64)
 CENTERED_TARGET = np.array([(0.20, 0.40), (0.80, 0.40), (1.05, 0.90), (-0.05, 0.90)], dtype=np.float64)
+DEFAULT_MAX_ITERATIONS = 120
 
 
 def fit_court(
@@ -19,6 +20,7 @@ def fit_court(
     probabilities: Float[Tensor, "N H W"],
     keypoints: Float[np.ndarray, "K 2"],
     visible: Bool[np.ndarray, "K"],
+    max_iterations: int = DEFAULT_MAX_ITERATIONS,
 ) -> tuple[Float[Tensor, "3 3"], Float[Tensor, "N H W"], float]:
     """Fit a court homography to predicted masks, seeded from the visible keypoints.
 
@@ -34,7 +36,7 @@ def fit_court(
         [1.5 if "3pt_area" in name or "painted_area" in name else 1.0 for name in mask_names],
         device=probabilities.device,
     )
-    matrix = fit_homography(source_masks, probabilities, initial, multipliers)
+    matrix = fit_homography(source_masks, probabilities, initial, multipliers, max_iterations)
     fitted = warp(source_masks, matrix, probabilities.shape[-2:])
     return matrix, fitted, soft_iou(fitted, probabilities)
 
@@ -44,6 +46,7 @@ def fit_homography(
     target_masks: Float[Tensor, "... N H W"],
     initial_homography: Float[Tensor, "... 3 3"],
     multipliers: Float[Tensor, "*N"] | None = None,
+    max_iterations: int = DEFAULT_MAX_ITERATIONS,
 ) -> Float[Tensor, "... 3 3"]:
     if source_masks.shape[-3] != target_masks.shape[-3]:
         raise ValueError(f"Got {source_masks.shape[-3]} source masks and {target_masks.shape[-3]} target masks")
@@ -55,7 +58,13 @@ def fit_homography(
     params[..., 0] = 1
     params[..., 4] = 1
     params.requires_grad_()
-    optimizer = torch.optim.LBFGS([params], lr=0.6, max_iter=420, history_size=20, line_search_fn="strong_wolfe")
+    optimizer = torch.optim.LBFGS(
+        [params],
+        lr=0.6,
+        max_iter=max_iterations,
+        history_size=20,
+        line_search_fn="strong_wolfe",
+    )
 
     def closure() -> Float[Tensor, ""]:
         optimizer.zero_grad(set_to_none=True)

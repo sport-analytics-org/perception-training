@@ -21,6 +21,8 @@ from court_training.detection import inference
 from court_training.detection.model import CourtDetector
 from court_training.segmentation.model import CourtSegmenter
 
+POLYGON_SIMPLIFICATION_RATIO = 0.002
+
 
 class Point(BaseModel):
     x: float
@@ -106,31 +108,51 @@ async def predict(
     segmentation: Annotated[bool, Form()] = True,
     detection: Annotated[bool, Form()] = True,
     segmentation_threshold: Annotated[float, Form()] = 0.5,
+    homography_iterations: Annotated[int, Form(gt=0)] = homography.DEFAULT_MAX_ITERATIONS,
     detection_threshold: Annotated[float, Form()] = 0.25,
     detection_hflip: Annotated[bool, Form()] = False,
 ) -> Prediction:
     frame = Image.open(io.BytesIO(await image.read())).convert("RGB")
     prediction = Prediction(width=frame.width, height=frame.height)
     if segmentation:
-        prediction.segmentation = predict_segmentation(app.state.segmenter, frame, segmentation_threshold)
+        prediction.segmentation = predict_segmentation(
+            app.state.segmenter,
+            frame,
+            segmentation_threshold,
+            homography_iterations,
+        )
     if detection:
         prediction.detections = predict_detections(app.state.detector, frame, detection_threshold, detection_hflip)
     return prediction
 
 
-def predict_segmentation(model: CourtSegmenter, image: Image.Image, threshold: float) -> Segmentation:
-    prediction = model.predict([image])
+def predict_segmentation(
+    model: CourtSegmenter,
+    image: Image.Image,
+    threshold: float,
+    homography_iterations: int,
+) -> Segmentation:
+    with torch.inference_mode():
+        prediction = model.predict([image])
     probabilities = prediction["masks"][0].sigmoid().cpu()
     keypoints = prediction["keypoints"][0].cpu().numpy()
     visibility = prediction["visibility"][0].sigmoid().cpu().numpy()
 
+    fitted_homography, fitted_masks = fit_nba_homography(
+        probabilities,
+        keypoints,
+        visibility,
+        model,
+        homography_iterations,
+    )
+
     return Segmentation(
-        polygons=mask_polygons(probabilities.numpy() >= threshold, model.mask_names),
+        polygons=mask_polygons(fitted_masks.numpy() >= threshold, model.mask_names) if fitted_masks is not None else [],
         keypoints=[
             Keypoint(position=(float(x), float(y)), visible=bool(score >= threshold))
             for (x, y), score in zip(keypoints, visibility, strict=True)
         ],
-        homography=fit_nba_homography(probabilities, keypoints, visibility, model),
+        homography=fitted_homography,
     )
 
 
@@ -140,7 +162,8 @@ def mask_polygons(masks: Bool[np.ndarray, "N H W"], labels: tuple[str, ...]) -> 
     for label, mask in zip(labels, masks, strict=True):
         contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for contour in contours:
-            simplified = cv2.approxPolyDP(contour, 0.01 * cv2.arcLength(contour, closed=True), closed=True)
+            epsilon = POLYGON_SIMPLIFICATION_RATIO * cv2.arcLength(contour, closed=True)
+            simplified = cv2.approxPolyDP(contour, epsilon, closed=True)
             if len(simplified) < 3:
                 continue
             points = [Point(x=x / (width - 1), y=y / (height - 1)) for x, y in simplified[:, 0, :].tolist()]
@@ -153,14 +176,22 @@ def fit_nba_homography(
     keypoints: Float[np.ndarray, "K 2"],
     visibility: Float[np.ndarray, "K"],
     model: CourtSegmenter,
-) -> Homography | None:
+    max_iterations: int,
+) -> tuple[Homography | None, Float[Tensor, "N H W"] | None]:
     visible = visibility >= 0.5
     if visible.sum() < 4:
-        return None
-    matrix, _, score = homography.fit_court(
-        NbaCourt, model.mask_names, model.keypoint_names, probabilities, keypoints, visible
+        return None, None
+    matrix, fitted_masks, score = homography.fit_court(
+        NbaCourt,
+        model.mask_names,
+        model.keypoint_names,
+        probabilities,
+        keypoints,
+        visible,
+        max_iterations,
     )
-    return Homography(court="nba", matrix=matrix.cpu().tolist(), soft_iou=score)
+    fitted_homography = Homography(court="nba", matrix=matrix.cpu().tolist(), soft_iou=score)
+    return fitted_homography, fitted_masks.cpu()
 
 
 def predict_detections(

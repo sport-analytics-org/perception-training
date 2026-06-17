@@ -3,7 +3,6 @@ from typing import Literal, NotRequired, TypedDict
 import numpy as np
 import torch
 from jaxtyping import Float
-from PIL import Image
 from sportanalytics import FibaCourt, NbaCourt
 from sportanalytics.court.basket import BasketCourt
 from torch import Tensor, nn
@@ -11,7 +10,6 @@ from torch.nn import functional as F
 
 import court_training.homography as homography
 import court_training.warp as warp
-from court_training.constants import IMAGE_MEAN, IMAGE_STD
 from court_training.flip import flip_torch
 
 CourtType = Literal["nba", "fiba"]
@@ -34,6 +32,7 @@ def predict(
     mask_names: tuple[str, ...],
     keypoint_names: tuple[str, ...],
     scales: tuple[float, ...] = (1.0,),
+    hflip: bool = True,
     fit_homography: bool = False,
     court_type: CourtType = "nba",
 ) -> Prediction:
@@ -50,20 +49,26 @@ def predict(
         else:
             assert not keypoint_names
 
-        flipped_prediction = model(flip_torch(image=scaled_images)["image"])
-        flipped = flip_torch(
-            masks=flipped_prediction["masks"],
-            keypoints=flipped_prediction.get("keypoints"),
-            visibility=flipped_prediction.get("visibility"),
-            mask_names=mask_names,
-            keypoint_names=keypoint_names,
-        )
-
-        masks = (prediction["masks"] + flipped["masks"]) / 2
+        masks = prediction["masks"]
+        if hflip:
+            flipped_prediction = model(flip_torch(image=scaled_images)["image"])
+            flipped = flip_torch(
+                masks=flipped_prediction["masks"],
+                keypoints=flipped_prediction.get("keypoints"),
+                visibility=flipped_prediction.get("visibility"),
+                mask_names=mask_names,
+                keypoint_names=keypoint_names,
+            )
+            masks = (masks + flipped["masks"]) / 2
         masks_by_scale.append(F.interpolate(masks, size=output_size, mode="bilinear", align_corners=False))
         if "keypoints" in prediction:
-            keypoints_by_scale.append((prediction["keypoints"] + flipped["keypoints"]) / 2)
-            visibility_by_scale.append((prediction["visibility"] + flipped["visibility"]) / 2)
+            keypoints = prediction["keypoints"]
+            visibility = prediction["visibility"]
+            if hflip:
+                keypoints = (keypoints + flipped["keypoints"]) / 2
+                visibility = (visibility + flipped["visibility"]) / 2
+            keypoints_by_scale.append(keypoints)
+            visibility_by_scale.append(visibility)
 
     output: Prediction = {"masks": torch.stack(masks_by_scale).mean(dim=0)}
     if keypoints_by_scale:
@@ -113,9 +118,3 @@ def fit_homography_to_masks(
         "visibility": visibility.to(dtype=target_masks.dtype),
         "homography": homographies,
     }
-
-
-def image_to_tensor(image: Image.Image, device: torch.device) -> Float[Tensor, "1 3 H W"]:
-    image_array = np.asarray(image, dtype=np.float32) / 255.0
-    tensor = torch.from_numpy(image_array).permute(2, 0, 1).to(device)
-    return ((tensor - IMAGE_MEAN.to(device)) / IMAGE_STD.to(device))[None]

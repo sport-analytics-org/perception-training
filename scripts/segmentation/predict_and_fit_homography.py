@@ -15,8 +15,6 @@ from torch import Tensor
 from tqdm import tqdm
 
 from court_training import homography
-from court_training.constants import TTA_SCALES
-from court_training.segmentation.inference import image_to_tensor
 from court_training.segmentation.model import CourtSegmenter
 from court_training.warp import warp
 
@@ -30,7 +28,6 @@ DATASETS_OPTION = typer.Option(
     "--dataset",
     help="Subdataset to sample. Can be passed multiple times.",
 )
-IMAGE_SIZE = (360, 480)
 COLORS = np.array(
     [
         (58, 134, 255),
@@ -78,9 +75,7 @@ def main(
         if counts[dataset] == count_per_dataset:
             continue
         original_image = Image.open(image_path).convert("RGB")
-        image = original_image.resize((IMAGE_SIZE[1], IMAGE_SIZE[0]), Image.Resampling.BILINEAR)
-        image_tensor = image_to_tensor(image, device)
-        prediction = model.predict(image_tensor, TTA_SCALES)
+        prediction = model.predict([original_image])
         probabilities = prediction["masks"][0].sigmoid().cpu()
         keypoints = prediction["keypoints"][0].cpu().numpy()
         visibility = prediction["visibility"][0].sigmoid().cpu().numpy()
@@ -111,6 +106,7 @@ def main(
             score,
         )
         panel_path = panel_dir / f"{len(rows):02d}_{image_path.stem}.jpg"
+        image = original_image.resize((model.image_size[1], model.image_size[0]), Image.Resampling.BILINEAR)
         make_panel(
             image,
             homography_probabilities,

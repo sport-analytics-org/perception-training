@@ -17,7 +17,6 @@ from sportanalytics import NbaCourt
 from torch import Tensor
 
 from court_training import homography
-from court_training.detection import inference
 from court_training.detection.model import CourtDetector
 from court_training.segmentation.model import CourtSegmenter
 
@@ -200,7 +199,7 @@ def predict_detections(
     threshold: float,
     hflip: bool,
 ) -> Detections:
-    predictions = inference.predict(model, image, hflip=hflip, threshold=threshold, nms_iou=0.6, max_detections=300)
+    predictions = model.predict([image], hflip=hflip, threshold=threshold, nms_iou=0.6, max_detections=300)[0]
     width, height = image.size
     boxes = [
         DetectionBox(

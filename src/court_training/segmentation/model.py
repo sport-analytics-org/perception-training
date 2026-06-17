@@ -126,16 +126,15 @@ class CourtSegmenter(nn.Module):
         tensors = torch.stack(
             [image2tensor(image.resize((width, height), Image.Resampling.BILINEAR)) for image in images]
         ).to(self.device)
-        prediction = inference.predict(
+        return inference.predict(
             self,
             tensors,
             self.mask_names,
             self.keypoint_names,
-            scales,
-            hflip,
+            scales=scales,
+            hflip=hflip,
+            output_size=output_size,
         )
-        prediction["masks"] = F.interpolate(prediction["masks"], size=output_size, mode="bilinear", align_corners=False)
-        return prediction
 
     @property
     def device(self) -> torch.device:

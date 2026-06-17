@@ -20,10 +20,10 @@ COURTS: dict[CourtType, BasketCourt] = {
 
 
 class Prediction(TypedDict):
-    masks: Float[Tensor, "B N H W"]
-    keypoints: NotRequired[Float[Tensor, "B K 2"]]
-    visibility: NotRequired[Float[Tensor, "B K"]]
-    homography: NotRequired[Float[Tensor, "B 3 3"]]
+    masks: Float[np.ndarray, "B N H W"]
+    keypoints: Float[np.ndarray, "B K 2"]
+    visibility: Float[np.ndarray, "B K"]
+    homography: NotRequired[Float[np.ndarray, "B 3 3"]]
 
 
 def predict(
@@ -35,8 +35,9 @@ def predict(
     hflip: bool = True,
     fit_homography: bool = False,
     court_type: CourtType = "nba",
+    output_size: tuple[int, int] | None = None,
 ) -> Prediction:
-    output_size = images.shape[-2:]
+    inference_size = images.shape[-2:]
     masks_by_scale = []
     keypoints_by_scale = []
     visibility_by_scale = []
@@ -60,7 +61,7 @@ def predict(
                 keypoint_names=keypoint_names,
             )
             masks = (masks + flipped["masks"]) / 2
-        masks_by_scale.append(F.interpolate(masks, size=output_size, mode="bilinear", align_corners=False))
+        masks_by_scale.append(F.interpolate(masks, size=inference_size, mode="bilinear", align_corners=False))
         if "keypoints" in prediction:
             keypoints = prediction["keypoints"]
             visibility = prediction["visibility"]
@@ -70,21 +71,31 @@ def predict(
             keypoints_by_scale.append(keypoints)
             visibility_by_scale.append(visibility)
 
-    output: Prediction = {"masks": torch.stack(masks_by_scale).mean(dim=0)}
+    output = {"masks": torch.stack(masks_by_scale).mean(dim=0)}
     if keypoints_by_scale:
         output["keypoints"] = torch.stack(keypoints_by_scale).mean(dim=0)
         output["visibility"] = torch.stack(visibility_by_scale).mean(dim=0)
     if fit_homography:
         output = fit_homography_to_masks(output, mask_names, keypoint_names, COURTS[court_type])
-    return output
+    if output_size is not None:
+        output["masks"] = F.interpolate(output["masks"], size=output_size, mode="bilinear", align_corners=False)
+
+    prediction: Prediction = {
+        "masks": output["masks"].sigmoid().cpu().numpy().astype(np.float32),
+        "keypoints": output["keypoints"].cpu().numpy().astype(np.float32),
+        "visibility": output["visibility"].sigmoid().cpu().numpy().astype(np.float32),
+    }
+    if "homography" in output:
+        prediction["homography"] = output["homography"].cpu().numpy().astype(np.float32)
+    return prediction
 
 
 def fit_homography_to_masks(
-    prediction: Prediction,
+    prediction: dict[str, Tensor],
     mask_names: tuple[str, ...],
     keypoint_names: tuple[str, ...],
     court: BasketCourt,
-) -> Prediction:
+) -> dict[str, Tensor]:
     mask_names = tuple(court.planar_areas())
     mask_count = len(mask_names)
     target_masks = prediction["masks"][:, :mask_count].sigmoid()

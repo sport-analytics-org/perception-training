@@ -181,11 +181,11 @@ def evaluate(model: CourtDetector, loader: DataLoader, device: torch.device) -> 
 
 
 def detections_to_torchmetrics(detections) -> dict[str, torch.Tensor]:
-    boxes = torch.from_numpy(detections.xyxy).to(dtype=torch.float32)
+    boxes = torch.from_numpy(detections["boxes"]).to(dtype=torch.float32)
     return {
         "boxes": box_convert(boxes, "xyxy", "xywh"),
-        "scores": torch.from_numpy(detections.confidence).to(dtype=torch.float32),
-        "labels": torch.from_numpy(detections.class_id).to(dtype=torch.long),
+        "scores": torch.from_numpy(detections["scores"]).to(dtype=torch.float32),
+        "labels": torch.from_numpy(detections["labels"]).to(dtype=torch.long),
     }
 
 

@@ -228,12 +228,15 @@ def evaluate(
     for batch in tqdm(loader, desc="Evaluating", leave=False):
         tensors = to_device(batch, device)
         prediction = model.predict([tensor2image(image) for image in tensors["image"]])
+        predicted_masks = torch.as_tensor(prediction["masks"], device=device)
+        predicted_keypoints = torch.as_tensor(prediction["keypoints"], device=device)
+        predicted_visibility = torch.as_tensor(prediction["visibility"], device=device)
 
         visible = tensors["visibility"] > 0.5
-        error = (prediction["keypoints"][visible] - tensors["keypoints"][visible]).norm(dim=-1)
+        error = (predicted_keypoints[visible] - tensors["keypoints"][visible]).norm(dim=-1)
         keypoint_error.update(error)
-        visibility_accuracy.update(prediction["visibility"].sigmoid(), visible.int())
-        class_iou.update(prediction["masks"].sigmoid(), (tensors["mask"] > 0.5).int())
+        visibility_accuracy.update(predicted_visibility, visible.int())
+        class_iou.update(predicted_masks, (tensors["mask"] > 0.5).int())
 
     iou = class_iou.compute()
     return EvalMetrics(

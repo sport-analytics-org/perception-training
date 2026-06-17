@@ -16,11 +16,11 @@ def predict(
     max_detections: int,
 ) -> dict[str, Tensor]:
     """Thresholded, NMS-merged detections with normalized xywh boxes, optionally pooling hflip TTA."""
-    detections = model.predict([image], hflip=hflip)[0]
-    boxes_xyxy = torch.from_numpy(detections.xyxy).to(dtype=torch.float32)
+    prediction = model.predict([image], hflip=hflip)[0]
+    boxes_xyxy = torch.from_numpy(prediction["boxes"]).to(dtype=torch.float32)
     boxes = box_convert(boxes_xyxy, "xyxy", "xywh")
-    scores = torch.from_numpy(detections.confidence).to(dtype=torch.float32)
-    labels = torch.from_numpy(detections.class_id).to(dtype=torch.long)
+    scores = torch.from_numpy(prediction["scores"]).to(dtype=torch.float32)
+    labels = torch.from_numpy(prediction["labels"]).to(dtype=torch.long)
     confident = scores >= threshold
     boxes, scores, labels = boxes[confident], scores[confident], labels[confident]
     boxes_xyxy = box_convert(boxes, "xywh", "xyxy")

@@ -76,9 +76,9 @@ def main(
             continue
         original_image = Image.open(image_path).convert("RGB")
         prediction = model.predict([original_image])
-        probabilities = prediction["masks"][0].sigmoid().cpu()
-        keypoints = prediction["keypoints"][0].cpu().numpy()
-        visibility = prediction["visibility"][0].sigmoid().cpu().numpy()
+        probabilities = torch.from_numpy(prediction["masks"][0])
+        keypoints = prediction["keypoints"][0]
+        visibility = prediction["visibility"][0]
 
         is_fiba_dataset = dataset.startswith("fiba_")
         court_name = "fiba" if is_fiba_dataset else "nba"

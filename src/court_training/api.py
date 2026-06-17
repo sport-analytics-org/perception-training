@@ -134,9 +134,9 @@ def predict_segmentation(
 ) -> Segmentation:
     with torch.inference_mode():
         prediction = model.predict([image])
-    probabilities = prediction["masks"][0].sigmoid().cpu()
-    keypoints = prediction["keypoints"][0].cpu().numpy()
-    visibility = prediction["visibility"][0].sigmoid().cpu().numpy()
+    probabilities = torch.from_numpy(prediction["masks"][0])
+    keypoints = prediction["keypoints"][0]
+    visibility = prediction["visibility"][0]
 
     fitted_homography, fitted_masks = fit_nba_homography(
         probabilities,
@@ -205,10 +205,10 @@ def predict_detections(
     boxes = [
         DetectionBox(
             category_id=label,
-            bbox_xyxy=(x * width, y * height, (x + w) * width, (y + h) * height),
+            bbox_xyxy=(x1 * width, y1 * height, x2 * width, y2 * height),
             score=score,
         )
-        for (x, y, w, h), score, label in zip(
+        for (x1, y1, x2, y2), score, label in zip(
             predictions["boxes"].tolist(),
             predictions["scores"].tolist(),
             predictions["labels"].tolist(),

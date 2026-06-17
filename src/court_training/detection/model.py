@@ -1,10 +1,11 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TypedDict
 
-import supervision as sv
+import numpy as np
 import torch
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from PIL import Image
 from rfdetr.config import RFDETRLargeConfig, TrainConfig
 from rfdetr.models.lwdetr import build_criterion_from_config, build_model_from_config
@@ -17,6 +18,12 @@ from court_training.image_io import image2tensor
 
 LR_VIT_LAYER_DECAY = 0.8
 LR_COMPONENT_DECAY = 0.7
+
+
+class Prediction(TypedDict):
+    boxes: Float[np.ndarray, "N 4"]
+    scores: Float[np.ndarray, "N"]
+    labels: Int[np.ndarray, "N"]
 
 
 class CourtDetector(nn.Module):
@@ -72,7 +79,7 @@ class CourtDetector(nn.Module):
         images: list[Image.Image],
         scales: tuple[float, ...] = (1.0,),
         hflip: bool = False,
-    ) -> list[sv.Detections]:
+    ) -> list[Prediction]:
         """Per-image detections with normalized xyxy boxes as numpy arrays."""
         predictions_by_image = [[] for _ in images]
         variant_tensors = []
@@ -98,7 +105,14 @@ class CourtDetector(nn.Module):
                 prediction["boxes"] = flip.flip_torch(boxes_xywh=prediction["boxes"])["boxes_xywh"]
             predictions_by_image[image_index].append(prediction)
 
-        return [detections_from_prediction(merge_predictions(predictions)) for predictions in predictions_by_image]
+        outputs = []
+        for predictions in predictions_by_image:
+            prediction = merge_predictions(predictions)
+            boxes = box_convert(prediction["boxes"], "xywh", "xyxy").cpu().numpy().astype(np.float32)
+            scores = prediction["scores"].cpu().numpy().astype(np.float32)
+            labels = prediction["labels"].cpu().numpy()
+            outputs.append({"boxes": boxes, "scores": scores, "labels": labels})
+        return outputs
 
     def param_groups(self, lr: float, lr_encoder: float, weight_decay: float) -> list[dict]:
         args = SimpleNamespace(
@@ -164,9 +178,3 @@ def merge_predictions(predictions: list[dict[str, Tensor]]) -> dict[str, Tensor]
         "labels": torch.cat([prediction["labels"] for prediction in predictions]),
     }
 
-
-def detections_from_prediction(prediction: dict[str, Tensor]) -> sv.Detections:
-    boxes_xyxy = box_convert(prediction["boxes"], "xywh", "xyxy").cpu().numpy()
-    confidence = prediction["scores"].cpu().numpy()
-    class_id = prediction["labels"].cpu().numpy()
-    return sv.Detections(xyxy=boxes_xyxy, confidence=confidence, class_id=class_id)

@@ -29,9 +29,9 @@ To export original labelled subdatasets into that layout:
 
 ```bash
 uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/output \
-  --train-dataset basketball_51 \
-  --train-dataset borgo \
-  --val-dataset e_bard_detection
+  --train-dataset nba_mixed \
+  --train-dataset fiba_borgo \
+  --val-dataset nba_detection1
 ```
 
 Use `--masks/--no-masks` and `--detections/--no-detections` to choose which annotations to
@@ -39,7 +39,7 @@ export. At least one train or val subdataset must be selected, but both splits a
 
 ```bash
 uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/output \
-  --train-dataset basketball_player_detection_2 \
+  --train-dataset nba_detection0 \
   --no-masks \
   --detections
 ```
@@ -67,8 +67,8 @@ Export the basketball detection train/eval split:
 
 ```bash
 uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/detection-dataset \
-  --train-dataset basketball_player_detection_2 \
-  --val-dataset e_bard_detection \
+  --train-dataset nba_detection0 \
+  --val-dataset nba_detection1 \
   --no-masks \
   --detections
 ```

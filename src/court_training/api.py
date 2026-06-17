@@ -17,13 +17,9 @@ from sportanalytics import NbaCourt
 from torch import Tensor
 
 from court_training import homography
-from court_training.constants import TTA_SCALES
 from court_training.detection import inference
 from court_training.detection.model import CourtDetector
-from court_training.segmentation.inference import image_to_tensor
 from court_training.segmentation.model import CourtSegmenter
-
-IMAGE_SIZE = (360, 480)
 
 
 class Point(BaseModel):
@@ -123,8 +119,7 @@ async def predict(
 
 
 def predict_segmentation(model: CourtSegmenter, image: Image.Image, threshold: float) -> Segmentation:
-    resized = image.resize((IMAGE_SIZE[1], IMAGE_SIZE[0]), Image.Resampling.BILINEAR)
-    prediction = model.predict(image_to_tensor(resized, model.device), TTA_SCALES)
+    prediction = model.predict([image])
     probabilities = prediction["masks"][0].sigmoid().cpu()
     keypoints = prediction["keypoints"][0].cpu().numpy()
     visibility = prediction["visibility"][0].sigmoid().cpu().numpy()
@@ -191,4 +186,3 @@ def predict_detections(
     ]
     categories = [DetectionCategory(id=index, name=name) for index, name in enumerate(model.class_names)]
     return Detections(categories=categories, boxes=boxes)
-

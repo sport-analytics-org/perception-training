@@ -96,6 +96,7 @@ def main(
         num_keypoints=num_keypoints,
         mask_names=BASKETBALL_MASK_NAMES,
         keypoint_names=BASKETBALL_KEYPOINT_NAMES,
+        image_size=image_size,
         backbone=backbone,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
@@ -225,7 +226,7 @@ def evaluate(
 
     for batch in tqdm(loader, desc="Evaluating", leave=False):
         tensors = to_device(batch, device)
-        prediction = model.predict(tensors["image"], TTA_SCALES)
+        prediction = model.predict_tensors(tensors["image"], TTA_SCALES, hflip=True)
 
         visible = tensors["visibility"] > 0.5
         error = (prediction["keypoints"][visible] - tensors["keypoints"][visible]).norm(dim=-1)

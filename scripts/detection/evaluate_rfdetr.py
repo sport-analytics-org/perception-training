@@ -5,10 +5,11 @@ import torch
 import typer
 from PIL import Image
 from torchmetrics.detection import MeanAveragePrecision
+from torchvision.ops import box_convert
 from tqdm import tqdm
 
 from court_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset
-from court_training.detection import inference, metrics
+from court_training.detection import metrics
 from court_training.detection.model import CourtDetector
 
 app = typer.Typer(help="Evaluate an RF-DETR checkpoint on basketball detections.")
@@ -38,14 +39,19 @@ def main(
     for image_path in tqdm(val_data.image_paths, desc="Evaluating"):
         with Image.open(image_path) as image:
             image = image.convert("RGB")
-        prediction = inference.predict(
-            model,
-            image,
+        prediction = model.predict(
+            [image],
             hflip=hflip,
             threshold=threshold,
             nms_iou=nms_iou,
             max_detections=max_detections,
-        )
+        )[0]
+        boxes = torch.from_numpy(prediction["boxes"]).to(dtype=torch.float32)
+        prediction = {
+            "boxes": box_convert(boxes, "xyxy", "xywh"),
+            "scores": torch.from_numpy(prediction["scores"]).to(dtype=torch.float32),
+            "labels": torch.from_numpy(prediction["labels"]).to(dtype=torch.long),
+        }
         boxes_xywh, labels = val_data.boxes[image_path]
         ground_truth = {"boxes": torch.from_numpy(boxes_xywh), "labels": torch.from_numpy(labels)}
         metric.update([prediction], [ground_truth])

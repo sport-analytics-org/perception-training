@@ -1,11 +1,9 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TypedDict
 
-import numpy as np
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Float
 from PIL import Image
 from rfdetr.config import RFDETRLargeConfig, TrainConfig
 from rfdetr.models.lwdetr import build_criterion_from_config, build_model_from_config
@@ -13,17 +11,12 @@ from rfdetr.models.weights import load_pretrain_weights
 from torch import Tensor, nn
 from torchvision.ops import box_convert
 
-from court_training import dataset, flip
+from court_training import dataset
+from court_training.detection import inference
 from court_training.image_io import image2tensor
 
 LR_VIT_LAYER_DECAY = 0.8
 LR_COMPONENT_DECAY = 0.7
-
-
-class Prediction(TypedDict):
-    boxes: Float[np.ndarray, "N 4"]
-    scores: Float[np.ndarray, "N"]
-    labels: Int[np.ndarray, "N"]
 
 
 class CourtDetector(nn.Module):
@@ -79,40 +72,38 @@ class CourtDetector(nn.Module):
         images: list[Image.Image],
         scales: tuple[float, ...] = (1.0,),
         hflip: bool = False,
-    ) -> list[Prediction]:
+        threshold: float = 0.0,
+        nms_iou: float | None = None,
+        max_detections: int | None = None,
+    ) -> list[inference.Prediction]:
         """Per-image detections with normalized xyxy boxes as numpy arrays."""
-        predictions_by_image = [[] for _ in images]
         variant_tensors = []
-        variant_images = []
-        variant_flipped = []
+        image_indexes = []
+        flipped_flags = []
         for image_index, image in enumerate(images):
             for scale in scales:
                 height, width = scaled_image_size(self.image_size, scale)
                 resized = image.resize((width, height), Image.Resampling.BILINEAR)
                 variant_tensors.append(image2tensor(resized))
-                variant_images.append(image_index)
-                variant_flipped.append(False)
+                image_indexes.append(image_index)
+                flipped_flags.append(False)
                 if hflip:
-                    flipped = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-                    resized = flipped.resize((width, height), Image.Resampling.BILINEAR)
+                    flipped_image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                    resized = flipped_image.resize((width, height), Image.Resampling.BILINEAR)
                     variant_tensors.append(image2tensor(resized))
-                    variant_images.append(image_index)
-                    variant_flipped.append(True)
+                    image_indexes.append(image_index)
+                    flipped_flags.append(True)
 
-        for tensor, image_index, flipped in zip(variant_tensors, variant_images, variant_flipped, strict=True):
-            prediction = _predict_tensors(self, tensor[None].to(self.device))[0]
-            if flipped:
-                prediction["boxes"] = flip.flip_torch(boxes_xywh=prediction["boxes"])["boxes_xywh"]
-            predictions_by_image[image_index].append(prediction)
-
-        outputs = []
-        for predictions in predictions_by_image:
-            prediction = merge_predictions(predictions)
-            boxes = box_convert(prediction["boxes"], "xywh", "xyxy").cpu().numpy().astype(np.float32)
-            scores = prediction["scores"].cpu().numpy().astype(np.float32)
-            labels = prediction["labels"].cpu().numpy()
-            outputs.append({"boxes": boxes, "scores": scores, "labels": labels})
-        return outputs
+        return inference.predict(
+            self,
+            torch.stack(variant_tensors).to(self.device),
+            image_indexes,
+            flipped_flags,
+            len(images),
+            threshold=threshold,
+            nms_iou=nms_iou,
+            max_detections=max_detections,
+        )
 
     def param_groups(self, lr: float, lr_encoder: float, weight_decay: float) -> list[dict]:
         args = SimpleNamespace(
@@ -151,30 +142,3 @@ class CourtDetector(nn.Module):
 def scaled_image_size(image_size: tuple[int, int], scale: float) -> tuple[int, int]:
     height, width = image_size
     return max(1, round(height * scale)), max(1, round(width * scale))
-
-
-def _predict_tensors(model: CourtDetector, images: Float[Tensor, "B 3 H W"]) -> list[dict[str, Tensor]]:
-    """Run RF-DETR on normalized tensors and return normalized xywh detections."""
-    outputs = model.model(images)
-    unit_sizes = torch.ones((len(images), 2), device=images.device)
-    results = model.postprocess(outputs, unit_sizes)
-    predictions = []
-    for result in results:
-        keep = result["labels"] < len(model.class_names)
-        prediction = {key: value[keep] for key, value in result.items()}
-        prediction["boxes"] = box_convert(prediction["boxes"], "xyxy", "xywh")
-        predictions.append(prediction)
-    return predictions
-
-
-def merge_predictions(predictions: list[dict[str, Tensor]]) -> dict[str, Tensor]:
-    if not predictions:
-        empty_float = torch.empty((0,), dtype=torch.float32)
-        empty_long = torch.empty((0,), dtype=torch.long)
-        return {"boxes": empty_float.reshape(0, 4), "scores": empty_float, "labels": empty_long}
-    return {
-        "boxes": torch.cat([prediction["boxes"] for prediction in predictions]),
-        "scores": torch.cat([prediction["scores"] for prediction in predictions]),
-        "labels": torch.cat([prediction["labels"] for prediction in predictions]),
-    }
-

@@ -16,8 +16,9 @@ from torchmetrics.classification import BinaryAccuracy, MultilabelJaccardIndex
 from tqdm import tqdm
 
 from court_training.augment import CourtAugment
-from court_training.constants import IMAGE_MEAN, IMAGE_STD, TTA_SCALES
+from court_training.constants import IMAGE_MEAN, IMAGE_STD
 from court_training.dataset import BASKETBALL_KEYPOINT_NAMES, BASKETBALL_MASK_NAMES, CourtDataset
+from court_training.image_io import tensor2image
 from court_training.segmentation.model import CourtSegmenter
 
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
@@ -96,6 +97,7 @@ def main(
         num_keypoints=num_keypoints,
         mask_names=BASKETBALL_MASK_NAMES,
         keypoint_names=BASKETBALL_KEYPOINT_NAMES,
+        image_size=image_size,
         backbone=backbone,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
@@ -162,7 +164,7 @@ def write_config(output_dir: Path, backbone: str, image_size: tuple[int, int]) -
         "image_size": {"height": image_size[0], "width": image_size[1]},
         "normalization": normalization,
     }
-    (output_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+    (output_dir / "args.json").write_text(json.dumps(config, indent=2) + "\n")
 
 
 def lr_decay_factor(epoch: int, epochs: int) -> float:
@@ -225,7 +227,7 @@ def evaluate(
 
     for batch in tqdm(loader, desc="Evaluating", leave=False):
         tensors = to_device(batch, device)
-        prediction = model.predict(tensors["image"], TTA_SCALES)
+        prediction = model.predict([tensor2image(image) for image in tensors["image"]])
 
         visible = tensors["visibility"] > 0.5
         error = (prediction["keypoints"][visible] - tensors["keypoints"][visible]).norm(dim=-1)

@@ -4,9 +4,11 @@ from pathlib import Path
 import timm
 import torch
 from jaxtyping import Float
+from PIL import Image
 from torch import Tensor, nn
 from torch.nn import functional as F
 
+from court_training.image_io import image2tensor
 from court_training.segmentation import inference
 
 
@@ -17,12 +19,14 @@ class CourtSegmenter(nn.Module):
         num_keypoints: int | None = None,
         mask_names: tuple[str, ...] = (),
         keypoint_names: tuple[str, ...] = (),
+        image_size: tuple[int, int] = (360, 480),
         backbone: str = "vit_large_patch16_dinov3",
         pretrained: bool = True,
     ) -> None:
         super().__init__()
         self.mask_names = mask_names
         self.keypoint_names = keypoint_names
+        self.image_size = image_size
         self.backbone = timm.create_model(backbone, pretrained=pretrained, num_classes=0, dynamic_img_size=True)
         self.decoder = ProgressiveMaskHead(self.backbone.embed_dim, num_masks)
         self.keypoint_heatmaps = None
@@ -87,13 +91,17 @@ class CourtSegmenter(nn.Module):
 
     @classmethod
     def load(cls, checkpoint: Path, device: torch.device) -> "CourtSegmenter":
-        """Build the model from the checkpoint's config.json sidecar and load its weights."""
-        config = json.loads(checkpoint.with_name("config.json").read_text())
+        """Build the model from the checkpoint's args.json sidecar and load its weights."""
+        config_path = checkpoint.with_name("args.json")
+        config = json.loads(config_path.read_text())
+        image_size_config = config["image_size"]
+        image_size = (image_size_config["height"], image_size_config["width"])
         model = cls(
             num_masks=len(config["mask_names"]),
             num_keypoints=len(config["keypoint_names"]),
             mask_names=tuple(config["mask_names"]),
             keypoint_names=tuple(config["keypoint_names"]),
+            image_size=image_size,
             backbone=config["backbone"],
             pretrained=False,
         )
@@ -106,12 +114,28 @@ class CourtSegmenter(nn.Module):
     @torch.no_grad()
     def predict(
         self,
-        images: Float[Tensor, "B 3 H W"],
+        images: list[Image.Image],
         scales: tuple[float, ...] = (1.0,),
-        fit_homography: bool = False,
-        court_type: inference.CourtType = "nba",
+        hflip: bool = True,
     ) -> inference.Prediction:
-        return inference.predict(self, images, self.mask_names, self.keypoint_names, scales, fit_homography, court_type)
+        original_sizes = {(image.height, image.width) for image in images}
+        if len(original_sizes) != 1:
+            raise ValueError("All images in a prediction batch must have the same size.")
+        output_size = original_sizes.pop()
+        height, width = self.image_size
+        tensors = torch.stack(
+            [image2tensor(image.resize((width, height), Image.Resampling.BILINEAR)) for image in images]
+        ).to(self.device)
+        prediction = inference.predict(
+            self,
+            tensors,
+            self.mask_names,
+            self.keypoint_names,
+            scales,
+            hflip,
+        )
+        prediction["masks"] = F.interpolate(prediction["masks"], size=output_size, mode="bilinear", align_corners=False)
+        return prediction
 
     @property
     def device(self) -> torch.device:
@@ -126,7 +150,6 @@ def softargmax_2d(heatmaps: Float[Tensor, "B K H W"], temperature: float = 4.0) 
     grid_y, grid_x = torch.meshgrid(y, x, indexing="ij")
     grid = torch.stack((grid_x, grid_y), dim=-1).reshape(height * width, 2)
     return torch.einsum("bkp,pd->bkd", probabilities, grid)
-
 
 class ProgressiveMaskHead(nn.Module):
     def __init__(self, channels: int, num_masks: int) -> None:

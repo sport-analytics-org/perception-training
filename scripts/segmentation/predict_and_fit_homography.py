@@ -25,7 +25,7 @@ DATASET_ROOT_ARGUMENT = typer.Argument(help="Basketball image dataset root.")
 CHECKPOINT_ARGUMENT = typer.Argument(help="CourtSegmenter checkpoint.")
 OUTPUT_DIR_ARGUMENT = typer.Argument(help="Directory where the HTML report is written.")
 DATASETS_OPTION = typer.Option(
-    ["basketball_51", "borgo", "e_bard_detection"],
+    ["nba_mixed", "fiba_borgo", "nba_detection1"],
     "--dataset",
     help="Subdataset to sample. Can be passed multiple times.",
 )
@@ -81,8 +81,9 @@ def main(
         keypoints = prediction["keypoints"][0].cpu().numpy()
         visibility = prediction["visibility"][0].sigmoid().cpu().numpy()
 
-        court_name = "fiba" if dataset == "borgo" else "nba"
-        court = FibaCourt if dataset == "borgo" else NbaCourt
+        is_fiba_dataset = dataset.startswith("fiba_")
+        court_name = "fiba" if is_fiba_dataset else "nba"
+        court = FibaCourt if is_fiba_dataset else NbaCourt
         homography_mask_names = tuple(court.planar_areas())
         homography_probabilities = probabilities[: len(homography_mask_names)]
         visible = visibility >= 0.5

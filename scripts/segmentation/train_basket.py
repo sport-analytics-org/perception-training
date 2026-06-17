@@ -163,7 +163,7 @@ def write_config(output_dir: Path, backbone: str, image_size: tuple[int, int]) -
         "image_size": {"height": image_size[0], "width": image_size[1]},
         "normalization": normalization,
     }
-    (output_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+    (output_dir / "args.json").write_text(json.dumps(config, indent=2) + "\n")
 
 
 def lr_decay_factor(epoch: int, epochs: int) -> float:

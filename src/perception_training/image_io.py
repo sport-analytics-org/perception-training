@@ -4,7 +4,7 @@ from jaxtyping import Float
 from PIL import Image
 from torch import Tensor
 
-from court_training.constants import IMAGE_MEAN, IMAGE_STD
+from perception_training.constants import IMAGE_MEAN, IMAGE_STD
 
 
 def image2tensor(image: Image.Image) -> Float[Tensor, "3 H W"]:

@@ -11,9 +11,9 @@ from rfdetr.models.weights import load_pretrain_weights
 from torch import Tensor, nn
 from torchvision.ops import box_convert
 
-from court_training import dataset
-from court_training.detection import inference
-from court_training.image_io import image2tensor
+import perception_training as pt
+import perception_training.detection as detection
+from perception_training.image_io import image2tensor
 
 LR_VIT_LAYER_DECAY = 0.8
 LR_COMPONENT_DECAY = 0.7
@@ -43,7 +43,7 @@ class CourtDetector(nn.Module):
     def forward(self, images: Float[Tensor, "B 3 H W"]) -> dict:
         return self.model(images)
 
-    def loss(self, outputs: dict, targets: list[dataset.Target]) -> Tensor:
+    def loss(self, outputs: dict, targets: list[pt.dataset.Target]) -> Tensor:
         criterion_targets = []
         for target in targets:
             boxes_cxcywh = box_convert(target["boxes_xywh"], "xywh", "cxcywh")
@@ -75,7 +75,7 @@ class CourtDetector(nn.Module):
         threshold: float = 0.0,
         nms_iou: float | None = None,
         max_detections: int | None = None,
-    ) -> list[inference.Prediction]:
+    ) -> list[detection.inference.Prediction]:
         """Per-image detections with normalized xyxy boxes as numpy arrays."""
         variant_tensors = []
         image_indexes = []
@@ -94,7 +94,7 @@ class CourtDetector(nn.Module):
                     image_indexes.append(image_index)
                     flipped_flags.append(True)
 
-        return inference.predict(
+        return detection.inference.predict(
             self,
             torch.stack(variant_tensors).to(self.device),
             image_indexes,

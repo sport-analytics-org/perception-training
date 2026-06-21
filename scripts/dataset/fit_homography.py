@@ -1,25 +1,24 @@
 import json
 from pathlib import Path
 
+import courts_and_fields as cnf
 import numpy as np
 import torch
 import typer
 from jaxtyping import Float, UInt8
 from PIL import Image
-from sportanalytics import FibaCourt, NbaCourt
-from sportanalytics.court.basket import BasketCourt
 from torch import Tensor
 
-from court_training.homography import centered_homography, fit_homography
-from court_training.warp import warp
+from perception_training.homography import centered_homography, fit_homography
+from perception_training.warp import warp
 
 app = typer.Typer(help="Fit a basketball court homography from raster bitfield masks.")
 MASK_ARGUMENT = typer.Argument(help="Raster bitfield mask WebP.")
 COURT_OPTION = typer.Option("nba", help="Court template to fit: nba or fiba.")
 
 COURTS = {
-    "nba": NbaCourt,
-    "fiba": FibaCourt,
+    "nba": cnf.NbaCourt,
+    "fiba": cnf.FibaCourt,
 }
 @app.command()
 def main(
@@ -54,7 +53,7 @@ def main(
     print(json.dumps(result, indent=2))
 
 
-def load_masks(mask_path: Path, court: BasketCourt) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
+def load_masks(mask_path: Path, court: cnf.BasketCourt) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
     image = Image.open(mask_path).convert("L")
     bitfield: UInt8[np.ndarray, "H W"] = np.asarray(image, dtype=np.uint8)
     mask_names = tuple(court.planar_areas())
@@ -68,7 +67,7 @@ def load_masks(mask_path: Path, court: BasketCourt) -> tuple[tuple[str, ...], Fl
 
 
 def load_template_masks(
-    court_template: BasketCourt,
+    court_template: cnf.BasketCourt,
     labels: tuple[str, ...],
     width: int,
 ) -> Float[Tensor, "N H W"]:

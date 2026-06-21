@@ -15,11 +15,11 @@ from torchmetrics import MeanMetric
 from torchmetrics.classification import BinaryAccuracy, MultilabelJaccardIndex
 from tqdm import tqdm
 
-from court_training.augment import CourtAugment
-from court_training.constants import IMAGE_MEAN, IMAGE_STD
-from court_training.dataset import BASKETBALL_KEYPOINT_NAMES, BASKETBALL_MASK_NAMES, CourtDataset
-from court_training.image_io import tensor2image
-from court_training.segmentation.model import CourtSegmenter
+from perception_training.augment import CourtAugment
+from perception_training.constants import IMAGE_MEAN, IMAGE_STD
+from perception_training.dataset import BASKETBALL_KEYPOINT_NAMES, BASKETBALL_MASK_NAMES, CourtDataset
+from perception_training.image_io import tensor2image
+from perception_training.segmentation.model import CourtSegmenter
 
 app = typer.Typer(help="Train a basketball court-mask segmenter.")
 

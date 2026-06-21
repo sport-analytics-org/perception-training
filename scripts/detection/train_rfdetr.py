@@ -11,11 +11,11 @@ from torchmetrics.detection import MeanAveragePrecision
 from torchvision.ops import box_convert
 from tqdm import tqdm
 
-from court_training import image_io
-from court_training.augment import CourtAugment
-from court_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset, collate
-from court_training.detection import metrics
-from court_training.detection.model import CourtDetector
+import perception_training as pt
+import perception_training.detection as detection
+from perception_training.augment import CourtAugment
+from perception_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset, collate
+from perception_training.detection.model import CourtDetector
 
 app = typer.Typer(help="Fine-tune RF-DETR Large on basketball detections.")
 
@@ -167,7 +167,7 @@ def evaluate(model: CourtDetector, loader: DataLoader, device: torch.device) -> 
     model.eval()
     metric = MeanAveragePrecision(box_format="xywh", class_metrics=True)
     for images, targets in tqdm(loader, desc="Evaluating", leave=False):
-        batch_images = [image_io.tensor2image(image) for image in images.to(device)]
+        batch_images = [pt.image_io.tensor2image(image) for image in images.to(device)]
         detections = model.predict(batch_images)
         predictions = [detections_to_torchmetrics(detection) for detection in detections]
         # TorchMetrics stores targets until compute(); clone off DataLoader shared-memory storage.
@@ -177,7 +177,7 @@ def evaluate(model: CourtDetector, loader: DataLoader, device: torch.device) -> 
             labels = target["labels"].clone()
             ground_truth.append({"boxes": boxes, "labels": labels})
         metric.update(predictions, ground_truth)
-    return metrics.summarize(metric, model.class_names)
+    return detection.metrics.summarize(metric, model.class_names)
 
 
 def detections_to_torchmetrics(detections) -> dict[str, torch.Tensor]:

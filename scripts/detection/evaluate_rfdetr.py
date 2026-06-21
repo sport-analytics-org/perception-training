@@ -8,9 +8,9 @@ from torchmetrics.detection import MeanAveragePrecision
 from torchvision.ops import box_convert
 from tqdm import tqdm
 
-from court_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset
-from court_training.detection import metrics
-from court_training.detection.model import CourtDetector
+import perception_training.detection as detection
+from perception_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset
+from perception_training.detection.model import CourtDetector
 
 app = typer.Typer(help="Evaluate an RF-DETR checkpoint on basketball detections.")
 
@@ -56,7 +56,7 @@ def main(
         ground_truth = {"boxes": torch.from_numpy(boxes_xywh), "labels": torch.from_numpy(labels)}
         metric.update([prediction], [ground_truth])
 
-    results = metrics.summarize(metric, BASKETBALL_DETECTION_CLASSES)
+    results = detection.metrics.summarize(metric, BASKETBALL_DETECTION_CLASSES)
     output_json = output_json.expanduser().resolve()
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(results, indent=2) + "\n")

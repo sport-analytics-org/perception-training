@@ -1,21 +1,19 @@
 from typing import Literal, NotRequired, TypedDict
 
+import courts_and_fields as cnf
 import numpy as np
 import torch
 from jaxtyping import Float
-from sportanalytics import FibaCourt, NbaCourt
-from sportanalytics.court.basket import BasketCourt
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-import court_training.homography as homography
-import court_training.warp as warp
-from court_training.flip import flip_torch
+import perception_training as pt
+from perception_training.flip import flip_torch
 
 CourtType = Literal["nba", "fiba"]
-COURTS: dict[CourtType, BasketCourt] = {
-    "nba": NbaCourt,
-    "fiba": FibaCourt,
+COURTS: dict[CourtType, cnf.BasketCourt] = {
+    "nba": cnf.NbaCourt,
+    "fiba": cnf.FibaCourt,
 }
 
 
@@ -94,12 +92,12 @@ def fit_homography_to_masks(
     prediction: dict[str, Tensor],
     mask_names: tuple[str, ...],
     keypoint_names: tuple[str, ...],
-    court: BasketCourt,
+    court: cnf.BasketCourt,
 ) -> dict[str, Tensor]:
     mask_names = tuple(court.planar_areas())
     mask_count = len(mask_names)
     target_masks = prediction["masks"][:, :mask_count].sigmoid()
-    source_keypoints = homography.normalized_keypoints(court, keypoint_names)
+    source_keypoints = pt.homography.normalized_keypoints(court, keypoint_names)
     source_keypoints_tensor = torch.as_tensor(source_keypoints, dtype=target_masks.dtype, device=target_masks.device)
     width = target_masks.shape[-1]
     masks = []
@@ -110,14 +108,14 @@ def fit_homography_to_masks(
 
     predicted_keypoints = prediction["keypoints"]
     initial_homographies = [
-        homography.find_keypoints_homography(source_keypoints, keypoints.detach().cpu().numpy())
+        pt.homography.find_keypoints_homography(source_keypoints, keypoints.detach().cpu().numpy())
         for keypoints in predicted_keypoints
     ]
     initial_homographies = np.stack(initial_homographies)
     initial_homographies = torch.as_tensor(initial_homographies, dtype=source_masks.dtype, device=source_masks.device)
     source_masks = source_masks.expand(*target_masks.shape[:-3], -1, -1, -1)
-    homographies = homography.fit_homography(source_masks, target_masks, initial_homographies)
-    probabilities = warp.warp(source_masks, homographies, target_masks.shape[-2:]).clamp(1e-4, 1 - 1e-4)
+    homographies = pt.homography.fit_homography(source_masks, target_masks, initial_homographies)
+    probabilities = pt.warp.warp(source_masks, homographies, target_masks.shape[-2:]).clamp(1e-4, 1 - 1e-4)
     ones = torch.ones(len(source_keypoints_tensor), 1, dtype=target_masks.dtype, device=target_masks.device)
     homogeneous = torch.cat((source_keypoints_tensor, ones), dim=1)
     projected = torch.einsum("kd,bhd->bkh", homogeneous, homographies)

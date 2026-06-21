@@ -2,8 +2,8 @@ import albumentations as A
 import numpy as np
 from jaxtyping import Bool, Float
 
-from court_training.dataset import NumpySample
-from court_training.flip import HorizontalFlip
+from perception_training.dataset import NumpySample
+from perception_training.flip import HorizontalFlip
 
 
 class CourtAugment:

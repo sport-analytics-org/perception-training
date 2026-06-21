@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
+import courts_and_fields as cnf
 import cv2
 import numpy as np
 import torch
@@ -13,12 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from jaxtyping import Bool, Float
 from PIL import Image
 from pydantic import BaseModel
-from sportanalytics import NbaCourt
 from torch import Tensor
 
-from court_training import homography
-from court_training.detection.model import CourtDetector
-from court_training.segmentation.model import CourtSegmenter
+import perception_training as pt
+from perception_training.detection.model import CourtDetector
+from perception_training.segmentation.model import CourtSegmenter
 
 POLYGON_SIMPLIFICATION_RATIO = 0.002
 
@@ -107,7 +107,7 @@ async def predict(
     segmentation: Annotated[bool, Form()] = True,
     detection: Annotated[bool, Form()] = True,
     segmentation_threshold: Annotated[float, Form()] = 0.5,
-    homography_iterations: Annotated[int, Form(gt=0)] = homography.DEFAULT_MAX_ITERATIONS,
+    homography_iterations: Annotated[int, Form(gt=0)] = pt.homography.DEFAULT_MAX_ITERATIONS,
     detection_threshold: Annotated[float, Form()] = 0.25,
     detection_hflip: Annotated[bool, Form()] = False,
 ) -> Prediction:
@@ -180,8 +180,8 @@ def fit_nba_homography(
     visible = visibility >= 0.5
     if visible.sum() < 4:
         return None, None
-    matrix, fitted_masks, score = homography.fit_court(
-        NbaCourt,
+    matrix, fitted_masks, score = pt.homography.fit_court(
+        cnf.NbaCourt,
         model.mask_names,
         model.keypoint_names,
         probabilities,

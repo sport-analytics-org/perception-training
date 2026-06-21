@@ -1,1 +1,0 @@
-"""Court segmentation training utilities."""

@@ -8,8 +8,8 @@ from PIL import Image
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from court_training.image_io import image2tensor
-from court_training.segmentation import inference
+import perception_training.segmentation as segmentation
+from perception_training.image_io import image2tensor
 
 
 class CourtSegmenter(nn.Module):
@@ -117,7 +117,7 @@ class CourtSegmenter(nn.Module):
         images: list[Image.Image],
         scales: tuple[float, ...] = (1.0,),
         hflip: bool = True,
-    ) -> inference.Prediction:
+    ) -> segmentation.inference.Prediction:
         original_sizes = {(image.height, image.width) for image in images}
         if len(original_sizes) != 1:
             raise ValueError("All images in a prediction batch must have the same size.")
@@ -126,7 +126,7 @@ class CourtSegmenter(nn.Module):
         tensors = torch.stack(
             [image2tensor(image.resize((width, height), Image.Resampling.BILINEAR)) for image in images]
         ).to(self.device)
-        return inference.predict(
+        return segmentation.inference.predict(
             self,
             tensors,
             self.mask_names,

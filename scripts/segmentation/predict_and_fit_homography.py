@@ -3,20 +3,19 @@ import json
 import random
 from pathlib import Path
 
+import courts_and_fields as cnf
 import numpy as np
 import torch
 import typer
 from jaxtyping import Bool, Float, UInt8
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
-from sportanalytics import FibaCourt, NbaCourt
-from sportanalytics.court.basket import BasketCourt
 from torch import Tensor
 from tqdm import tqdm
 
-from court_training import homography
-from court_training.segmentation.model import CourtSegmenter
-from court_training.warp import warp
+import perception_training as pt
+from perception_training.segmentation.model import CourtSegmenter
+from perception_training.warp import warp
 
 app = typer.Typer(help="Predict basketball masks, fit homographies to them, and write an HTML report.")
 
@@ -82,14 +81,14 @@ def main(
 
         is_fiba_dataset = dataset.startswith("fiba_")
         court_name = "fiba" if is_fiba_dataset else "nba"
-        court = FibaCourt if is_fiba_dataset else NbaCourt
+        court = cnf.FibaCourt if is_fiba_dataset else cnf.NbaCourt
         homography_mask_names = tuple(court.planar_areas())
         homography_probabilities = probabilities[: len(homography_mask_names)]
         visible = visibility >= 0.5
         if visible.sum() < 4:
             logger.info("Skipping {}: only {} visible keypoints", image_path, visible.sum())
             continue
-        matrix, fitted, score = homography.fit_court(
+        matrix, fitted, score = pt.homography.fit_court(
             court, homography_mask_names, model.keypoint_names, homography_probabilities, keypoints, visible
         )
         fitted_homography = matrix.cpu().numpy()
@@ -153,23 +152,23 @@ def sample_by_dataset(image_paths: list[Path], count: int, datasets: tuple[str, 
 
 
 def render_at_image_size(
-    court: BasketCourt,
+    court: cnf.BasketCourt,
     mask_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
     size: tuple[int, int],
 ) -> Float[Tensor, "N H W"]:
     width, height = size
-    source_masks = homography.template_masks(court, mask_names, width, torch.device("cpu"))
+    source_masks = pt.homography.template_masks(court, mask_names, width, torch.device("cpu"))
     homography_tensor = torch.tensor(matrix, dtype=source_masks.dtype)
     return warp(source_masks, homography_tensor, (height, width))
 
 
 def project_keypoints(
-    court: BasketCourt,
+    court: cnf.BasketCourt,
     keypoint_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
 ) -> tuple[Float[np.ndarray, "K 2"], Bool[np.ndarray, "K"]]:
-    points = homography.normalized_keypoints(court, keypoint_names)
+    points = pt.homography.normalized_keypoints(court, keypoint_names)
     homogeneous = np.concatenate([points, np.ones((len(points), 1))], axis=1)
     projected = homogeneous @ matrix.T
     keypoints = projected[:, :2] / projected[:, 2:]

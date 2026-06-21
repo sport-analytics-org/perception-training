@@ -1,1 +1,0 @@
-"""Court perception training utilities."""

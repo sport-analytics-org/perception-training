@@ -47,7 +47,7 @@ uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/output
 ## Segmentation
 
 The current basketball segmentation model predicts six court masks from broadcast frames. Mask names come from
-`sportanalytics.NbaCourt.areas()` and are ordered as court, three-point area, painted area, with left before right.
+`courts_and_fields.NbaCourt.areas()` and are ordered as court, three-point area, painted area, with left before right.
 
 Train the basketball segmentation model:
 
@@ -105,7 +105,7 @@ environment variables and then reused for every request.
 ```bash
 export COURT_SEGMENTATION_CHECKPOINT=/path/to/segmentation/best.pt
 export COURT_DETECTION_CHECKPOINT=/path/to/rfdetr-large/checkpoint_best_total.pth
-uv run uvicorn court_training.api:app --host 0.0.0.0 --port 8000
+uv run uvicorn perception_training.api:app --host 0.0.0.0 --port 8000
 ```
 
 Health check:
@@ -123,7 +123,7 @@ curl -X POST http://localhost:8000/predict \
   -F detection=true
 ```
 
-The response matches the labeltool annotation schemas: mask polygons and keypoints (`{position, visible}`) in
+The response matches the labelling-tool annotation schemas: mask polygons and keypoints (`{position, visible}`) in
 normalized coordinates, the fitted homography (`null` when fewer than 4 keypoints are visible), and detection boxes
 as pixel `bbox_xyxy` with `category_id` plus a `categories` list. Set `segmentation=false` or `detection=false` to
 call only one model.

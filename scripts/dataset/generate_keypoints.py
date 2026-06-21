@@ -4,7 +4,6 @@ from pathlib import Path
 import courts_and_fields as cnf
 import numpy as np
 import typer
-from courts_and_fields.basket import BasketCourt
 from jaxtyping import Float
 
 app = typer.Typer(help="Generate dataset keypoint shards from homography shards.")
@@ -52,7 +51,7 @@ def keypoint_path_for(homography_path: Path) -> Path:
 
 
 def project_keypoints(
-    court: BasketCourt,
+    court: cnf.BasketCourt,
     homography: Float[np.ndarray, "3 3"],
 ) -> tuple[Float[np.ndarray, "K 2"], np.ndarray]:
     points = normalized_keypoints(court)
@@ -70,7 +69,7 @@ def project_keypoints(
     return keypoints, visibility
 
 
-def normalized_keypoints(court: BasketCourt) -> Float[np.ndarray, "K 2"]:
+def normalized_keypoints(court: cnf.BasketCourt) -> Float[np.ndarray, "K 2"]:
     points_by_name = court.keypoints()
     points = np.array([points_by_name[name] for name in KEYPOINT_NAMES], dtype=np.float64)
     x = (points[:, 0] + court.half_length) / court.length

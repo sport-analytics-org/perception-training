@@ -7,7 +7,6 @@ import courts_and_fields as cnf
 import numpy as np
 import torch
 import typer
-from courts_and_fields.basket import BasketCourt
 from jaxtyping import Bool, Float, UInt8
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
@@ -153,7 +152,7 @@ def sample_by_dataset(image_paths: list[Path], count: int, datasets: tuple[str, 
 
 
 def render_at_image_size(
-    court: BasketCourt,
+    court: cnf.BasketCourt,
     mask_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
     size: tuple[int, int],
@@ -165,7 +164,7 @@ def render_at_image_size(
 
 
 def project_keypoints(
-    court: BasketCourt,
+    court: cnf.BasketCourt,
     keypoint_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
 ) -> tuple[Float[np.ndarray, "K 2"], Bool[np.ndarray, "K"]]:

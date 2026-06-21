@@ -5,7 +5,6 @@ import courts_and_fields as cnf
 import numpy as np
 import torch
 import typer
-from courts_and_fields.basket import BasketCourt
 from jaxtyping import Float, UInt8
 from PIL import Image
 from torch import Tensor
@@ -54,7 +53,7 @@ def main(
     print(json.dumps(result, indent=2))
 
 
-def load_masks(mask_path: Path, court: BasketCourt) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
+def load_masks(mask_path: Path, court: cnf.BasketCourt) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
     image = Image.open(mask_path).convert("L")
     bitfield: UInt8[np.ndarray, "H W"] = np.asarray(image, dtype=np.uint8)
     mask_names = tuple(court.planar_areas())
@@ -68,7 +67,7 @@ def load_masks(mask_path: Path, court: BasketCourt) -> tuple[tuple[str, ...], Fl
 
 
 def load_template_masks(
-    court_template: BasketCourt,
+    court_template: cnf.BasketCourt,
     labels: tuple[str, ...],
     width: int,
 ) -> Float[Tensor, "N H W"]:

@@ -3,7 +3,6 @@ from typing import Literal, NotRequired, TypedDict
 import courts_and_fields as cnf
 import numpy as np
 import torch
-from courts_and_fields.basket import BasketCourt
 from jaxtyping import Float
 from torch import Tensor, nn
 from torch.nn import functional as F
@@ -13,7 +12,7 @@ import perception_training.warp as warp
 from perception_training.flip import flip_torch
 
 CourtType = Literal["nba", "fiba"]
-COURTS: dict[CourtType, BasketCourt] = {
+COURTS: dict[CourtType, cnf.BasketCourt] = {
     "nba": cnf.NbaCourt,
     "fiba": cnf.FibaCourt,
 }
@@ -94,7 +93,7 @@ def fit_homography_to_masks(
     prediction: dict[str, Tensor],
     mask_names: tuple[str, ...],
     keypoint_names: tuple[str, ...],
-    court: BasketCourt,
+    court: cnf.BasketCourt,
 ) -> dict[str, Tensor]:
     mask_names = tuple(court.planar_areas())
     mask_count = len(mask_names)

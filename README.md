@@ -120,13 +120,14 @@ Predict segmentation and detections for one image:
 curl -X POST http://localhost:8000/predict \
   -F image=@frame.jpg \
   -F segmentation=true \
+  -F court_type=nba \
   -F detection=true
 ```
 
 The response matches the labelling-tool annotation schemas: mask polygons and keypoints (`{position, visible}`) in
 normalized coordinates, the fitted homography (`null` when fewer than 4 keypoints are visible), and detection boxes
 as pixel `bbox_xyxy` with `category_id` plus a `categories` list. Set `segmentation=false` or `detection=false` to
-call only one model.
+call only one model. Set `court_type=fiba` for FIBA basketball datasets.
 
 ## Homography fitting
 

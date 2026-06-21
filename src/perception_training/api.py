@@ -3,7 +3,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import courts_and_fields as cnf
 import cv2
@@ -21,6 +21,11 @@ from perception_training.detection.model import CourtDetector
 from perception_training.segmentation.model import CourtSegmenter
 
 POLYGON_SIMPLIFICATION_RATIO = 0.002
+CourtType = Literal["nba", "fiba"]
+COURTS: dict[CourtType, cnf.BasketCourt] = {
+    "nba": cnf.NbaCourt,
+    "fiba": cnf.FibaCourt,
+}
 
 
 class Point(BaseModel):
@@ -106,6 +111,7 @@ async def predict(
     image: Annotated[UploadFile, File()],
     segmentation: Annotated[bool, Form()] = True,
     detection: Annotated[bool, Form()] = True,
+    court_type: Annotated[CourtType, Form()] = "nba",
     segmentation_threshold: Annotated[float, Form()] = 0.5,
     homography_iterations: Annotated[int, Form(gt=0)] = pt.homography.DEFAULT_MAX_ITERATIONS,
     detection_threshold: Annotated[float, Form()] = 0.25,
@@ -117,6 +123,7 @@ async def predict(
         prediction.segmentation = predict_segmentation(
             app.state.segmenter,
             frame,
+            court_type,
             segmentation_threshold,
             homography_iterations,
         )
@@ -128,6 +135,7 @@ async def predict(
 def predict_segmentation(
     model: CourtSegmenter,
     image: Image.Image,
+    court_type: CourtType,
     threshold: float,
     homography_iterations: int,
 ) -> Segmentation:
@@ -137,11 +145,12 @@ def predict_segmentation(
     keypoints = prediction["keypoints"][0]
     visibility = prediction["visibility"][0]
 
-    fitted_homography, fitted_masks = fit_nba_homography(
+    fitted_homography, fitted_masks = fit_homography(
         probabilities,
         keypoints,
         visibility,
         model,
+        court_type,
         homography_iterations,
     )
 
@@ -170,18 +179,19 @@ def mask_polygons(masks: Bool[np.ndarray, "N H W"], labels: tuple[str, ...]) -> 
     return polygons
 
 
-def fit_nba_homography(
+def fit_homography(
     probabilities: Float[Tensor, "N H W"],
     keypoints: Float[np.ndarray, "K 2"],
     visibility: Float[np.ndarray, "K"],
     model: CourtSegmenter,
+    court_type: CourtType,
     max_iterations: int,
 ) -> tuple[Homography | None, Float[Tensor, "N H W"] | None]:
     visible = visibility >= 0.5
     if visible.sum() < 4:
         return None, None
     matrix, fitted_masks, score = pt.homography.fit_court(
-        cnf.NbaCourt,
+        COURTS[court_type],
         model.mask_names,
         model.keypoint_names,
         probabilities,
@@ -189,7 +199,7 @@ def fit_nba_homography(
         visible,
         max_iterations,
     )
-    fitted_homography = Homography(court="nba", matrix=matrix.cpu().tolist(), soft_iou=score)
+    fitted_homography = Homography(court=court_type, matrix=matrix.cpu().tolist(), soft_iou=score)
     return fitted_homography, fitted_masks.cpu()
 
 

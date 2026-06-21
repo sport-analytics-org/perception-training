@@ -16,7 +16,7 @@ from PIL import Image
 from pydantic import BaseModel
 from torch import Tensor
 
-from perception_training import homography
+import perception_training as pt
 from perception_training.detection.model import CourtDetector
 from perception_training.segmentation.model import CourtSegmenter
 
@@ -107,7 +107,7 @@ async def predict(
     segmentation: Annotated[bool, Form()] = True,
     detection: Annotated[bool, Form()] = True,
     segmentation_threshold: Annotated[float, Form()] = 0.5,
-    homography_iterations: Annotated[int, Form(gt=0)] = homography.DEFAULT_MAX_ITERATIONS,
+    homography_iterations: Annotated[int, Form(gt=0)] = pt.homography.DEFAULT_MAX_ITERATIONS,
     detection_threshold: Annotated[float, Form()] = 0.25,
     detection_hflip: Annotated[bool, Form()] = False,
 ) -> Prediction:
@@ -180,7 +180,7 @@ def fit_nba_homography(
     visible = visibility >= 0.5
     if visible.sum() < 4:
         return None, None
-    matrix, fitted_masks, score = homography.fit_court(
+    matrix, fitted_masks, score = pt.homography.fit_court(
         cnf.NbaCourt,
         model.mask_names,
         model.keypoint_names,

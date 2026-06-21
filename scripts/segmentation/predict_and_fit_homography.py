@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 from torch import Tensor
 from tqdm import tqdm
 
-from perception_training import homography
+import perception_training as pt
 from perception_training.segmentation.model import CourtSegmenter
 from perception_training.warp import warp
 
@@ -88,7 +88,7 @@ def main(
         if visible.sum() < 4:
             logger.info("Skipping {}: only {} visible keypoints", image_path, visible.sum())
             continue
-        matrix, fitted, score = homography.fit_court(
+        matrix, fitted, score = pt.homography.fit_court(
             court, homography_mask_names, model.keypoint_names, homography_probabilities, keypoints, visible
         )
         fitted_homography = matrix.cpu().numpy()
@@ -158,7 +158,7 @@ def render_at_image_size(
     size: tuple[int, int],
 ) -> Float[Tensor, "N H W"]:
     width, height = size
-    source_masks = homography.template_masks(court, mask_names, width, torch.device("cpu"))
+    source_masks = pt.homography.template_masks(court, mask_names, width, torch.device("cpu"))
     homography_tensor = torch.tensor(matrix, dtype=source_masks.dtype)
     return warp(source_masks, homography_tensor, (height, width))
 
@@ -168,7 +168,7 @@ def project_keypoints(
     keypoint_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
 ) -> tuple[Float[np.ndarray, "K 2"], Bool[np.ndarray, "K"]]:
-    points = homography.normalized_keypoints(court, keypoint_names)
+    points = pt.homography.normalized_keypoints(court, keypoint_names)
     homogeneous = np.concatenate([points, np.ones((len(points), 1))], axis=1)
     projected = homogeneous @ matrix.T
     keypoints = projected[:, :2] / projected[:, 2:]

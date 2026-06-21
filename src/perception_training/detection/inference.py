@@ -6,7 +6,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torchvision.ops import batched_nms, box_convert
 
-from perception_training import flip
+import perception_training as pt
 
 if TYPE_CHECKING:
     from perception_training.detection.model import CourtDetector
@@ -38,7 +38,7 @@ def predict(
         prediction = {key: value[keep] for key, value in result.items()}
         prediction["boxes"] = box_convert(prediction["boxes"], "xyxy", "xywh")
         if is_flipped:
-            prediction["boxes"] = flip.flip_torch(boxes_xywh=prediction["boxes"])["boxes_xywh"]
+            prediction["boxes"] = pt.flip.flip_torch(boxes_xywh=prediction["boxes"])["boxes_xywh"]
         predictions_by_image[image_index].append(prediction)
 
     outputs = []

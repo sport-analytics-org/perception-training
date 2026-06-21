@@ -6,10 +6,10 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torchvision.ops import batched_nms, box_convert
 
-from court_training import flip
+from perception_training import flip
 
 if TYPE_CHECKING:
-    from court_training.detection.model import CourtDetector
+    from perception_training.detection.model import CourtDetector
 
 
 class Prediction(TypedDict):

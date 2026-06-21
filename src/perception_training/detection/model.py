@@ -11,9 +11,9 @@ from rfdetr.models.weights import load_pretrain_weights
 from torch import Tensor, nn
 from torchvision.ops import box_convert
 
-from court_training import dataset
-from court_training.detection import inference
-from court_training.image_io import image2tensor
+from perception_training import dataset
+from perception_training.detection import inference
+from perception_training.image_io import image2tensor
 
 LR_VIT_LAYER_DECAY = 0.8
 LR_COMPONENT_DECAY = 0.7

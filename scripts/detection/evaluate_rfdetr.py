@@ -8,9 +8,9 @@ from torchmetrics.detection import MeanAveragePrecision
 from torchvision.ops import box_convert
 from tqdm import tqdm
 
-from court_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset
-from court_training.detection import metrics
-from court_training.detection.model import CourtDetector
+from perception_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset
+from perception_training.detection import metrics
+from perception_training.detection.model import CourtDetector
 
 app = typer.Typer(help="Evaluate an RF-DETR checkpoint on basketball detections.")
 

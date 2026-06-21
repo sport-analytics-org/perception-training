@@ -2,15 +2,15 @@ from typing import Literal, NotRequired, TypedDict
 
 import numpy as np
 import torch
+from cnf import FibaCourt, NbaCourt
+from cnf.court.basket import BasketCourt
 from jaxtyping import Float
-from sportanalytics import FibaCourt, NbaCourt
-from sportanalytics.court.basket import BasketCourt
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-import court_training.homography as homography
-import court_training.warp as warp
-from court_training.flip import flip_torch
+import perception_training.homography as homography
+import perception_training.warp as warp
+from perception_training.flip import flip_torch
 
 CourtType = Literal["nba", "fiba"]
 COURTS: dict[CourtType, BasketCourt] = {

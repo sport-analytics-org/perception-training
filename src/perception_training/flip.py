@@ -3,7 +3,7 @@ import torch
 from jaxtyping import Float
 from torch import Tensor
 
-from court_training.dataset import NumpySample
+from perception_training.dataset import NumpySample
 
 
 class HorizontalFlip:

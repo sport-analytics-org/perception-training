@@ -3,9 +3,9 @@ from pathlib import Path
 
 import numpy as np
 import typer
+from cnf import FibaCourt, NbaCourt
+from cnf.court.basket import BasketCourt
 from jaxtyping import Float
-from sportanalytics import FibaCourt, NbaCourt
-from sportanalytics.court.basket import BasketCourt
 
 app = typer.Typer(help="Generate dataset keypoint shards from homography shards.")
 

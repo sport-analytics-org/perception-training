@@ -11,11 +11,11 @@ from torchmetrics.detection import MeanAveragePrecision
 from torchvision.ops import box_convert
 from tqdm import tqdm
 
-from court_training import image_io
-from court_training.augment import CourtAugment
-from court_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset, collate
-from court_training.detection import metrics
-from court_training.detection.model import CourtDetector
+from perception_training import image_io
+from perception_training.augment import CourtAugment
+from perception_training.dataset import BASKETBALL_DETECTION_CLASSES, CourtDataset, collate
+from perception_training.detection import metrics
+from perception_training.detection.model import CourtDetector
 
 app = typer.Typer(help="Fine-tune RF-DETR Large on basketball detections.")
 

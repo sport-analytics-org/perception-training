@@ -6,17 +6,17 @@ from pathlib import Path
 import numpy as np
 import torch
 import typer
+from cnf import FibaCourt, NbaCourt
+from cnf.court.basket import BasketCourt
 from jaxtyping import Bool, Float, UInt8
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
-from sportanalytics import FibaCourt, NbaCourt
-from sportanalytics.court.basket import BasketCourt
 from torch import Tensor
 from tqdm import tqdm
 
-from court_training import homography
-from court_training.segmentation.model import CourtSegmenter
-from court_training.warp import warp
+from perception_training import homography
+from perception_training.segmentation.model import CourtSegmenter
+from perception_training.warp import warp
 
 app = typer.Typer(help="Predict basketball masks, fit homographies to them, and write an HTML report.")
 

@@ -4,14 +4,14 @@ from pathlib import Path
 import numpy as np
 import torch
 import typer
+from cnf import FibaCourt, NbaCourt
+from cnf.court.basket import BasketCourt
 from jaxtyping import Float, UInt8
 from PIL import Image
-from sportanalytics import FibaCourt, NbaCourt
-from sportanalytics.court.basket import BasketCourt
 from torch import Tensor
 
-from court_training.homography import centered_homography, fit_homography
-from court_training.warp import warp
+from perception_training.homography import centered_homography, fit_homography
+from perception_training.warp import warp
 
 app = typer.Typer(help="Fit a basketball court homography from raster bitfield masks.")
 MASK_ARGUMENT = typer.Argument(help="Raster bitfield mask WebP.")

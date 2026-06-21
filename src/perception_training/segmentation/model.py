@@ -8,8 +8,8 @@ from PIL import Image
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from court_training.image_io import image2tensor
-from court_training.segmentation import inference
+from perception_training.image_io import image2tensor
+from perception_training.segmentation import inference
 
 
 class CourtSegmenter(nn.Module):

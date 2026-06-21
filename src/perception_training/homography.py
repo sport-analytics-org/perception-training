@@ -1,12 +1,12 @@
 import cv2
 import numpy as np
 import torch
+from cnf.court.basket import BasketCourt
 from jaxtyping import Bool, Float
-from sportanalytics.court.basket import BasketCourt
 from torch import Tensor
 
-from court_training.segmentation.loss import dice_loss
-from court_training.warp import warp
+from perception_training.segmentation.loss import dice_loss
+from perception_training.warp import warp
 
 CENTERED_SOURCE = np.array([(0, 0), (1, 0), (1, 1), (0, 1)], dtype=np.float64)
 CENTERED_TARGET = np.array([(0.20, 0.40), (0.80, 0.40), (1.05, 0.90), (-0.05, 0.90)], dtype=np.float64)

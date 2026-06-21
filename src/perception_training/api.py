@@ -8,17 +8,17 @@ from typing import Annotated
 import cv2
 import numpy as np
 import torch
+from cnf import NbaCourt
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from jaxtyping import Bool, Float
 from PIL import Image
 from pydantic import BaseModel
-from sportanalytics import NbaCourt
 from torch import Tensor
 
-from court_training import homography
-from court_training.detection.model import CourtDetector
-from court_training.segmentation.model import CourtSegmenter
+from perception_training import homography
+from perception_training.detection.model import CourtDetector
+from perception_training.segmentation.model import CourtSegmenter
 
 POLYGON_SIMPLIFICATION_RATIO = 0.002
 

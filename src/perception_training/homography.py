@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import torch
-from cnf.basket import BasketCourt
+from courts_and_fields.basket import BasketCourt
 from jaxtyping import Bool, Float
 from torch import Tensor
 

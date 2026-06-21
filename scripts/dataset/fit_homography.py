@@ -1,11 +1,11 @@
 import json
 from pathlib import Path
 
+import courts_and_fields as cnf
 import numpy as np
 import torch
 import typer
-from cnf import FibaCourt, NbaCourt
-from cnf.basket import BasketCourt
+from courts_and_fields.basket import BasketCourt
 from jaxtyping import Float, UInt8
 from PIL import Image
 from torch import Tensor
@@ -18,8 +18,8 @@ MASK_ARGUMENT = typer.Argument(help="Raster bitfield mask WebP.")
 COURT_OPTION = typer.Option("nba", help="Court template to fit: nba or fiba.")
 
 COURTS = {
-    "nba": NbaCourt,
-    "fiba": FibaCourt,
+    "nba": cnf.NbaCourt,
+    "fiba": cnf.FibaCourt,
 }
 @app.command()
 def main(

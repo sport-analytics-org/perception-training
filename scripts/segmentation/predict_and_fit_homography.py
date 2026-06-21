@@ -3,11 +3,11 @@ import json
 import random
 from pathlib import Path
 
+import courts_and_fields as cnf
 import numpy as np
 import torch
 import typer
-from cnf import FibaCourt, NbaCourt
-from cnf.basket import BasketCourt
+from courts_and_fields.basket import BasketCourt
 from jaxtyping import Bool, Float, UInt8
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
@@ -82,7 +82,7 @@ def main(
 
         is_fiba_dataset = dataset.startswith("fiba_")
         court_name = "fiba" if is_fiba_dataset else "nba"
-        court = FibaCourt if is_fiba_dataset else NbaCourt
+        court = cnf.FibaCourt if is_fiba_dataset else cnf.NbaCourt
         homography_mask_names = tuple(court.planar_areas())
         homography_probabilities = probabilities[: len(homography_mask_names)]
         visible = visibility >= 0.5

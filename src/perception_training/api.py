@@ -5,10 +5,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
+import courts_and_fields as cnf
 import cv2
 import numpy as np
 import torch
-from cnf import NbaCourt
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from jaxtyping import Bool, Float
@@ -181,7 +181,7 @@ def fit_nba_homography(
     if visible.sum() < 4:
         return None, None
     matrix, fitted_masks, score = homography.fit_court(
-        NbaCourt,
+        cnf.NbaCourt,
         model.mask_names,
         model.keypoint_names,
         probabilities,

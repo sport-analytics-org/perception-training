@@ -3,9 +3,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
+import courts_and_fields as cnf
 import numpy as np
 import torch
-from cnf import NbaCourt
 from jaxtyping import Float, Int64, UInt8
 from PIL import Image
 from torch import Tensor
@@ -13,8 +13,8 @@ from torch.utils.data import Dataset
 
 from perception_training.constants import IMAGE_MEAN, IMAGE_STD
 
-BASKETBALL_MASK_NAMES = tuple(NbaCourt.areas())
-BASKETBALL_KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
+BASKETBALL_MASK_NAMES = tuple(cnf.NbaCourt.areas())
+BASKETBALL_KEYPOINT_NAMES = tuple(cnf.NbaCourt.keypoints())
 BASKETBALL_DETECTION_CLASSES = ("ball", "player", "number", "referee", "rim")
 
 

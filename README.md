@@ -47,7 +47,7 @@ uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/output
 ## Segmentation
 
 The current basketball segmentation model predicts six court masks from broadcast frames. Mask names come from
-`cnf.NbaCourt.areas()` and are ordered as court, three-point area, painted area, with left before right.
+`courts_and_fields.NbaCourt.areas()` and are ordered as court, three-point area, painted area, with left before right.
 
 Train the basketball segmentation model:
 

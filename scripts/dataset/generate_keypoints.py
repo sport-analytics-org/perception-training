@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
 
+import courts_and_fields as cnf
 import numpy as np
 import typer
-from cnf import FibaCourt, NbaCourt
-from cnf.basket import BasketCourt
+from courts_and_fields.basket import BasketCourt
 from jaxtyping import Float
 
 app = typer.Typer(help="Generate dataset keypoint shards from homography shards.")
@@ -12,10 +12,10 @@ app = typer.Typer(help="Generate dataset keypoint shards from homography shards.
 HOMOGRAPHY_ARGUMENT = typer.Argument(help="Dataset homography shard JSON.")
 OUTPUT_OPTION = typer.Option(None, help="Output keypoint shard JSON. Defaults to the matching keypoints shard.")
 COURTS = {
-    "fiba": FibaCourt,
-    "nba": NbaCourt,
+    "fiba": cnf.FibaCourt,
+    "nba": cnf.NbaCourt,
 }
-KEYPOINT_NAMES = tuple(NbaCourt.keypoints())
+KEYPOINT_NAMES = tuple(cnf.NbaCourt.keypoints())
 
 
 @app.command()

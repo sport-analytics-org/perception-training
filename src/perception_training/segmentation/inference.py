@@ -1,9 +1,9 @@
 from typing import Literal, NotRequired, TypedDict
 
+import courts_and_fields as cnf
 import numpy as np
 import torch
-from cnf import FibaCourt, NbaCourt
-from cnf.basket import BasketCourt
+from courts_and_fields.basket import BasketCourt
 from jaxtyping import Float
 from torch import Tensor, nn
 from torch.nn import functional as F
@@ -14,8 +14,8 @@ from perception_training.flip import flip_torch
 
 CourtType = Literal["nba", "fiba"]
 COURTS: dict[CourtType, BasketCourt] = {
-    "nba": NbaCourt,
-    "fiba": FibaCourt,
+    "nba": cnf.NbaCourt,
+    "fiba": cnf.FibaCourt,
 }
 
 

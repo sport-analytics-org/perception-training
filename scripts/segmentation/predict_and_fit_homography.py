@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import typer
 from cnf import FibaCourt, NbaCourt
-from cnf.court.basket import BasketCourt
+from cnf.basket import BasketCourt
 from jaxtyping import Bool, Float, UInt8
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont

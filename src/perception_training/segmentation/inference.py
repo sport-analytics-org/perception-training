@@ -3,7 +3,7 @@ from typing import Literal, NotRequired, TypedDict
 import numpy as np
 import torch
 from cnf import FibaCourt, NbaCourt
-from cnf.court.basket import BasketCourt
+from cnf.basket import BasketCourt
 from jaxtyping import Float
 from torch import Tensor, nn
 from torch.nn import functional as F

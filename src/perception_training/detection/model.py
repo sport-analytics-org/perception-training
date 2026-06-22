@@ -3,26 +3,36 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import torch
+import torch.nn.functional as F  # noqa: N812
 from jaxtyping import Float
 from PIL import Image
 from rfdetr.config import RFDETRLargeConfig, TrainConfig
-from rfdetr.models.lwdetr import build_criterion_from_config, build_model_from_config
-from rfdetr.models.weights import load_pretrain_weights
 from torch import Tensor, nn
 from torchvision.ops import box_convert
 
 import perception_training as pt
 import perception_training.detection as detection
 from perception_training.image_io import image2tensor
+from perception_training.vendor.rfdetr_models.lwdetr import build_criterion_from_config, build_model_from_config
+from perception_training.vendor.rfdetr_models.weights import load_pretrain_weights
 
 LR_VIT_LAYER_DECAY = 0.8
 LR_COMPONENT_DECAY = 0.7
+ATTRIBUTE_LOSS_WEIGHT = 0.5
 
 
 class CourtDetector(nn.Module):
     """RF-DETR Large detector using only the model, loss, and postprocessor from rfdetr."""
 
-    def __init__(self, class_names: tuple[str, ...], image_size: tuple[int, int], pretrained: bool = True) -> None:
+    def __init__(
+        self,
+        class_names: tuple[str, ...],
+        image_size: tuple[int, int],
+        pretrained: bool = True,
+        attribute_names: tuple[str, ...] = pt.dataset.BASKETBALL_DETECTION_ATTRIBUTES,
+        attribute_loss_weight: float = ATTRIBUTE_LOSS_WEIGHT,
+        attribute_pos_weight: tuple[float, ...] | None = None,
+    ) -> None:
         super().__init__()
         if image_size[0] != image_size[1]:
             raise ValueError(f"RF-DETR requires square image_size, got {image_size}")
@@ -31,11 +41,26 @@ class CourtDetector(nn.Module):
         config.resolution = resolution
         config.positional_encoding_size = resolution // config.patch_size
         self.class_names = class_names
+        self.attribute_names = attribute_names
+        self.attribute_loss_weight = attribute_loss_weight
         self.image_size = image_size
         self.config = config
+        if attribute_pos_weight is None:
+            attribute_pos_weight = (1.0,) * len(attribute_names)
+        if len(attribute_pos_weight) != len(attribute_names):
+            raise ValueError(f"Expected {len(attribute_names)} attribute weights, got {len(attribute_pos_weight)}")
+        self.register_buffer("attribute_pos_weight", torch.tensor(attribute_pos_weight, dtype=torch.float32))
+        self.register_buffer(
+            "attribute_class_index",
+            torch.tensor(
+                [class_names.index(pt.dataset.BASKETBALL_ATTRIBUTE_BASE_CLASSES[name]) for name in attribute_names],
+                dtype=torch.long,
+            ),
+        )
         self.model = build_model_from_config(config)
         if pretrained:
             load_pretrain_weights(self.model, config)
+        self.model.reinitialize_attribute_head(len(attribute_names))
         # build_criterion_from_config requires a TrainConfig but only reads loss weights, never the paths
         train_config = TrainConfig(dataset_dir=".", output_dir=".")
         self.criterion, self.postprocess = build_criterion_from_config(config, train_config)
@@ -47,10 +72,62 @@ class CourtDetector(nn.Module):
         criterion_targets = []
         for target in targets:
             boxes_cxcywh = box_convert(target["boxes_xywh"], "xywh", "cxcywh")
-            criterion_targets.append({"boxes": boxes_cxcywh, "labels": target["labels"]})
+            criterion_targets.append(
+                {
+                    "boxes": boxes_cxcywh,
+                    "labels": target["labels"],
+                    "attributes": target["attributes"],
+                }
+            )
         losses = self.criterion(outputs, criterion_targets)
         weights = self.criterion.weight_dict
-        return sum(losses[name] * weights[name] for name in losses if name in weights)
+        detection_loss = sum(losses[name] * weights[name] for name in losses if name in weights)
+        return detection_loss + self.attribute_loss_weight * self.attribute_loss(outputs, criterion_targets)
+
+    def attribute_loss(self, outputs: dict, targets: list[dict[str, Tensor]]) -> Tensor:
+        if not self.attribute_names or "pred_attributes" not in outputs:
+            return outputs["pred_logits"].new_zeros(())
+
+        num_boxes = self.criterion.num_boxes_for_targets(outputs, targets)
+        loss = self.attribute_loss_for_outputs(outputs, targets, num_boxes)
+        for aux_outputs in outputs.get("aux_outputs", []):
+            loss = loss + self.attribute_loss_for_outputs(aux_outputs, targets, num_boxes)
+        if "enc_outputs" in outputs:
+            loss = loss + self.attribute_loss_for_outputs(outputs["enc_outputs"], targets, num_boxes)
+        return loss
+
+    def attribute_loss_for_outputs(
+        self,
+        outputs: dict,
+        targets: list[dict[str, Tensor]],
+        num_boxes: Tensor,
+    ) -> Tensor:
+        pred_attributes = outputs.get("pred_attributes")
+        if pred_attributes is None:
+            return outputs["pred_logits"].new_zeros(())
+
+        group_detr = self.criterion.group_detr if self.criterion.training else 1
+        indices = self.criterion.matcher(outputs, targets, group_detr=group_detr)
+        if not any(len(src) for src, _target in indices):
+            return pred_attributes.sum() * 0.0
+
+        src_idx = self.criterion._get_src_permutation_idx(indices)
+        matched_predictions = pred_attributes[src_idx]
+        matched_targets = torch.cat(
+            [target["attributes"][target_idx] for target, (_src_idx, target_idx) in zip(targets, indices, strict=True)]
+        ).to(device=matched_predictions.device, dtype=matched_predictions.dtype)
+        matched_labels = torch.cat(
+            [target["labels"][target_idx] for target, (_src_idx, target_idx) in zip(targets, indices, strict=True)]
+        ).to(device=matched_predictions.device)
+        eligible = matched_labels[:, None] == self.attribute_class_index.to(matched_predictions.device)
+        losses = F.binary_cross_entropy_with_logits(
+            matched_predictions,
+            matched_targets,
+            pos_weight=self.attribute_pos_weight.to(matched_predictions.device),
+            reduction="none",
+        )
+        losses = losses * eligible.to(losses.dtype)
+        return losses.sum() / num_boxes
 
     @classmethod
     def load(cls, checkpoint: Path, device: torch.device) -> "CourtDetector":
@@ -59,8 +136,18 @@ class CourtDetector(nn.Module):
         metadata = json.loads(metadata_path.read_text())
         image_size_config = metadata["image_size"]
         image_size = (image_size_config["height"], image_size_config["width"])
-        model = cls(tuple(metadata["classes"]), image_size, pretrained=False)
+        attribute_names = tuple(metadata.get("attributes", ()))
+        model = cls(
+            tuple(metadata["classes"]),
+            image_size,
+            pretrained=False,
+            attribute_names=attribute_names,
+            attribute_loss_weight=metadata.get("attribute_loss_weight", ATTRIBUTE_LOSS_WEIGHT),
+            attribute_pos_weight=metadata.get("attribute_pos_weight"),
+        )
         state_dict = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        state_dict.setdefault("attribute_pos_weight", model.attribute_pos_weight)
+        state_dict.setdefault("attribute_class_index", model.attribute_class_index)
         model.load_state_dict(state_dict)
         model.to(device)
         model.eval()

@@ -1525,7 +1525,7 @@ dependencies = [
     { name = "supervision" },
     { name = "timm" },
     { name = "torch" },
-    { name = "torchmetrics" },
+    { name = "torchmetrics", extra = ["detection"] },
     { name = "tqdm" },
     { name = "typer" },
     { name = "uvicorn" },
@@ -1547,11 +1547,11 @@ requires-dist = [
     { name = "opencv-python-headless", specifier = "==4.13.0.92" },
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
-    { name = "rfdetr", extras = ["train"], specifier = ">=1.7.1" },
+    { name = "rfdetr", extras = ["train"], specifier = "==1.8" },
     { name = "supervision", specifier = ">=0.28.0" },
     { name = "timm", specifier = ">=1.0.27" },
     { name = "torch", specifier = ">=2.4" },
-    { name = "torchmetrics", specifier = ">=1.9" },
+    { name = "torchmetrics", extras = ["detection"], specifier = ">=1.9" },
     { name = "tqdm", specifier = ">=4.67.0" },
     { name = "typer", specifier = ">=0.15.0" },
     { name = "uvicorn", specifier = ">=0.38.0" },
@@ -1875,11 +1875,11 @@ wheels = [
 
 [[package]]
 name = "pydeprecate"
-version = "0.7.0"
+version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/5a/be/0f746a6cc399dc437d494c4240d25fa3151314dbd42cb1e89a5543fc1801/pydeprecate-0.7.0.tar.gz", hash = "sha256:925ee2e39f266bcd923c1abb76256da240e51ac04fc1ebb5490e32683770f9c4", size = 98242, upload-time = "2026-03-31T17:31:36.498Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/1e/b069ea704e42fefeb523835ba3d712347ff672743e5fa9428f4201525328/pydeprecate-0.9.0.tar.gz", hash = "sha256:ed49a36506f63a8d4ae84ffedff1e2879733d536c7a6aaafdf8bfcd39520059b", size = 151667, upload-time = "2026-06-05T19:51:17.43Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ef/e6/42ece1260c287c5b376932d0d0fb776e5fe2a55ee58cf85d01ef97ca6c15/pydeprecate-0.7.0-py3-none-any.whl", hash = "sha256:b2baf35f82c06a22824029dd54ed763c7e8226f133893d15af4f9cf950a3b4d3", size = 63749, upload-time = "2026-03-31T17:31:35.023Z" },
+    { url = "https://files.pythonhosted.org/packages/47/87/a155f16c1c17adccaa2ed2256484fe1c6ad37b925e8e39695ed8860bc0b5/pydeprecate-0.9.0-py3-none-any.whl", hash = "sha256:c9501dae1a2567a3c7f7b04221ad5a97d1ad972a02ddb729a04299b435fedd7c", size = 102725, upload-time = "2026-06-05T19:51:16.235Z" },
 ]
 
 [[package]]
@@ -2180,9 +2180,10 @@ wheels = [
 
 [[package]]
 name = "rfdetr"
-version = "1.7.1"
+version = "1.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "numpy" },
     { name = "pydantic" },
     { name = "pydeprecate" },
     { name = "requests" },
@@ -2192,9 +2193,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "transformers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b8/e5/9b1d1991b22aaf1df2c6a0253ee7912b7ea571017c0e7f609bee536baf0e/rfdetr-1.7.1.tar.gz", hash = "sha256:76f1579f970ebe722662a48c8cdccdddc9332feae2a39a0805180aa783cd248b", size = 281308, upload-time = "2026-05-28T19:56:30.811Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/65/db/4165a8de2fe1a7f23523f05db7de0e20824897524889b3cbf8549ae14af8/rfdetr-1.8.0.tar.gz", hash = "sha256:4885792f488ccd32bda3089e20b4800e88e170d82ce77c2c82543201e87440a0", size = 342639, upload-time = "2026-06-16T15:21:45.097Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/75/f1629f1f6762ba8f6e39222565e2d0c33c495c100eb09c7ee5a81bd49cb9/rfdetr-1.7.1-py3-none-any.whl", hash = "sha256:e3944c502daf18a985b3311b4a831c2928f87568b13a901ce0f9b2d5a4fb227f", size = 319769, upload-time = "2026-05-28T19:56:28.995Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/7a/762bcc70639d66077c5bb64d42b204ffe503be5d38dd2420cd291d51804f/rfdetr-1.8.0-py3-none-any.whl", hash = "sha256:aafd65c5aa7ea567167dfc82869df69bd4130e89c24269cd14bcce52bc08eb26", size = 381225, upload-time = "2026-06-16T15:21:43.497Z" },
 ]
 
 [package.optional-dependencies]
@@ -2523,7 +2524,7 @@ wheels = [
 
 [[package]]
 name = "supervision"
-version = "0.28.0"
+version = "0.29.0.post0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "defusedxml" },
@@ -2537,9 +2538,9 @@ dependencies = [
     { name = "scipy" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3f/b0/2a3dcfd922d115a3dd76684927d9ed7576b36a8f696181bc334b04b0bef9/supervision-0.28.0.tar.gz", hash = "sha256:ae32536bba3239125311e3e91d7d1773cf8348da2f3ebe6836d90aa95b5908e5", size = 217542, upload-time = "2026-04-30T16:02:13.172Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/d6/1bfd54b022eea2e0a6f584b60817fdb896a45ede0e2897bc5860a85db88b/supervision-0.29.0.post0.tar.gz", hash = "sha256:1fb1051f4c2f0aa5796573bbee9bd75c3c8d48d3850320b51297b04d8204bc76", size = 240235, upload-time = "2026-06-17T16:06:59.55Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6b/2c/c3a0b6b258e9c698409dcbadd3c40c847f0cf170218d539c9b45b0069c5c/supervision-0.28.0-py3-none-any.whl", hash = "sha256:d38cf041751110c2c55a5c1c5d09c97a110ee253afa580818313db8654eef40f", size = 251564, upload-time = "2026-04-30T16:02:11.119Z" },
+    { url = "https://files.pythonhosted.org/packages/70/e9/70b97c85cba5f85e9c90ddb01795dfaccab079a6e6253469e6f047b69140/supervision-0.29.0.post0-py3-none-any.whl", hash = "sha256:6e10f82be300f1fef1aebd47793d665baaa1609b28bc4c98065b3f927567531c", size = 273615, upload-time = "2026-06-17T16:06:57.96Z" },
 ]
 
 [[package]]

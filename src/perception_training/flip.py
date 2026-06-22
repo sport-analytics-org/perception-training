@@ -39,6 +39,8 @@ class HorizontalFlip:
         if "boxes_xywh" in sample:
             output["boxes_xywh"] = flipped["boxes_xywh"]
             output["labels"] = sample["labels"]
+            if "attributes" in sample:
+                output["attributes"] = sample["attributes"]
         return output
 
 

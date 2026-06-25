@@ -45,11 +45,5 @@ jobs:
             -i "$SSH_KEY" \
             -o StrictHostKeyChecking=accept-new \
             -o "ProxyCommand=cloudflared access ssh --hostname %h --service-token-id ${CF_ACCESS_CLIENT_ID} --service-token-secret ${CF_ACCESS_CLIENT_SECRET}" \
-            "deploy@$DEPLOY_HOST" <<'EOF'
-          set -euo pipefail
-
-          cd /court-vision/perception-training
-          git fetch origin main
-          git reset --hard origin/main
-          ./deploy.sh
-          EOF
+            "deploy@$DEPLOY_HOST" \
+            perception-training

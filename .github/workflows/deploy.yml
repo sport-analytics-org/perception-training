@@ -44,9 +44,7 @@ jobs:
           timeout 60s ssh \
             -i "$SSH_KEY" \
             -o ConnectTimeout=30 \
-            -o ServerAliveInterval=10 \
-            -o ServerAliveCountMax=3 \
             -o StrictHostKeyChecking=accept-new \
-            -o "ProxyCommand=cloudflared access tcp --hostname %h --service-token-id ${CF_ACCESS_CLIENT_ID} --service-token-secret ${CF_ACCESS_CLIENT_SECRET} --loglevel debug" \
+            -o "ProxyCommand=cloudflared access tcp --hostname %h --service-token-id ${CF_ACCESS_CLIENT_ID} --service-token-secret ${CF_ACCESS_CLIENT_SECRET}" \
             "deploy@$DEPLOY_HOST" \
             perception-training

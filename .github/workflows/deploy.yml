@@ -1,0 +1,72 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+
+          : "${DEPLOY_HOST:?missing DEPLOY_HOST}"
+          : "${DEPLOY_SSH_KEY:?missing DEPLOY_SSH_KEY}"
+
+          DEPLOY_PORT="${DEPLOY_PORT:-22}"
+          DEPLOY_USER="${DEPLOY_USER:-deploy}"
+          SSH_DIR="$HOME/.ssh"
+          SSH_KEY="$SSH_DIR/court_vision_deploy"
+
+          mkdir -p "$SSH_DIR"
+          chmod 700 "$SSH_DIR"
+          printf '%s\n' "$DEPLOY_SSH_KEY" >"$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+
+          SSH_ARGS=(-i "$SSH_KEY" -p "$DEPLOY_PORT")
+          if [ -n "$CF_ACCESS_CLIENT_ID" ] || [ -n "$CF_ACCESS_CLIENT_SECRET" ]; then
+            : "${CF_ACCESS_CLIENT_ID:?missing CF_ACCESS_CLIENT_ID}"
+            : "${CF_ACCESS_CLIENT_SECRET:?missing CF_ACCESS_CLIENT_SECRET}"
+
+            curl -fsSL \
+              https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+              -o cloudflared
+            sudo install -m 0755 cloudflared /usr/local/bin/cloudflared
+
+            SSH_ARGS+=(
+              -o "ProxyCommand=cloudflared access ssh --hostname %h --service-token-id ${CF_ACCESS_CLIENT_ID} --service-token-secret ${CF_ACCESS_CLIENT_SECRET}"
+            )
+          fi
+
+          if [ -n "$DEPLOY_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" >>"$SSH_DIR/known_hosts"
+          elif [ -z "$CF_ACCESS_CLIENT_ID" ]; then
+            ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >>"$SSH_DIR/known_hosts"
+          else
+            SSH_ARGS+=(-o StrictHostKeyChecking=accept-new)
+          fi
+
+          ssh "${SSH_ARGS[@]}" "$DEPLOY_USER@$DEPLOY_HOST" <<'EOF'
+          set -euo pipefail
+
+          cd /court-vision/perception-training
+          git fetch origin main
+          git reset --hard origin/main
+          ./deploy.sh
+          EOF

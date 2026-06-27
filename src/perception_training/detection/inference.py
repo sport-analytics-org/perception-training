@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, NotRequired, TypedDict
 
 import numpy as np
 import torch
@@ -16,6 +16,7 @@ class Prediction(TypedDict):
     boxes: Float[np.ndarray, "N 4"]
     scores: Float[np.ndarray, "N"]
     labels: Int[np.ndarray, "N"]
+    attributes: NotRequired[Float[np.ndarray, "N A"]]
 
 
 def predict(
@@ -53,13 +54,14 @@ def predict(
             if max_detections is not None:
                 keep = keep[:max_detections]
             prediction = {key: value[keep] for key, value in prediction.items()}
-        outputs.append(
-            {
-                "boxes": box_convert(prediction["boxes"], "xywh", "xyxy").cpu().numpy().astype(np.float32),
-                "scores": prediction["scores"].cpu().numpy().astype(np.float32),
-                "labels": prediction["labels"].cpu().numpy(),
-            }
-        )
+        output = {
+            "boxes": box_convert(prediction["boxes"], "xywh", "xyxy").cpu().numpy().astype(np.float32),
+            "scores": prediction["scores"].cpu().numpy().astype(np.float32),
+            "labels": prediction["labels"].cpu().numpy(),
+        }
+        if "attributes" in prediction:
+            output["attributes"] = prediction["attributes"].cpu().numpy().astype(np.float32)
+        outputs.append(output)
     return outputs
 
 
@@ -68,8 +70,11 @@ def merge(predictions: list[dict[str, Tensor]]) -> dict[str, Tensor]:
         empty_float = torch.empty((0,), dtype=torch.float32)
         empty_long = torch.empty((0,), dtype=torch.long)
         return {"boxes": empty_float.reshape(0, 4), "scores": empty_float, "labels": empty_long}
-    return {
+    merged = {
         "boxes": torch.cat([prediction["boxes"] for prediction in predictions]),
         "scores": torch.cat([prediction["scores"] for prediction in predictions]),
         "labels": torch.cat([prediction["labels"] for prediction in predictions]),
     }
+    if "attributes" in predictions[0]:
+        merged["attributes"] = torch.cat([prediction["attributes"] for prediction in predictions])
+    return merged

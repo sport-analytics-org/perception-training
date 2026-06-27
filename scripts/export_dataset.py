@@ -8,6 +8,8 @@ import typer
 from loguru import logger
 from tqdm import tqdm
 
+from perception_training.dataset import BASKETBALL_DETECTION_ATTRIBUTES
+
 app = typer.Typer(help="Export tar-sharded subdatasets into flat train/val folders.")
 TRAIN_DATASET_OPTION = typer.Option(None, help="Subdataset name to copy into train.")
 VAL_DATASET_OPTION = typer.Option(None, help="Subdataset name to copy into val.")
@@ -169,10 +171,19 @@ def write_detections_npz(data: dict, output_path: Path) -> None:
     detections = data.get("detections", [])
     boxes_xywh = np.array([detection["bbox_xywh"] for detection in detections], dtype=np.float32).reshape(-1, 4)
     category_names = np.array([detection["category_name"] for detection in detections], dtype=str)
+    attributes = np.array(
+        [
+            [bool(detection.get("attributes", {}).get(name, False)) for name in BASKETBALL_DETECTION_ATTRIBUTES]
+            for detection in detections
+        ],
+        dtype=np.bool_,
+    ).reshape(-1, len(BASKETBALL_DETECTION_ATTRIBUTES))
     np.savez_compressed(
         output_path,
         boxes_xywh=boxes_xywh,
         category_names=category_names,
+        attributes=attributes,
+        attribute_names=np.array(BASKETBALL_DETECTION_ATTRIBUTES, dtype=str),
     )
 
 

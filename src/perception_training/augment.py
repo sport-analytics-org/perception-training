@@ -65,13 +65,19 @@ class CourtAugment:
         self.geom = A.Compose(
             transforms,
             keypoint_params=A.KeypointParams(format="xy", remove_invisible=False),
-            bbox_params=A.BboxParams(format="yolo", label_fields=["labels"], min_visibility=0.1, clip=True),
+            bbox_params=A.BboxParams(
+                format="yolo",
+                label_fields=["labels", "attributes"],
+                min_visibility=0.1,
+                clip=True,
+            ),
         )
 
     def __call__(self, sample: NumpySample) -> NumpySample:
         height, width = sample["image"].shape[:2]
         keypoints = sample.get("keypoints", np.zeros((0, 2), dtype=np.float32))
         boxes_xywh = sample.get("boxes_xywh", np.zeros((0, 4), dtype=np.float32))
+        attributes = sample.get("attributes", np.zeros((len(boxes_xywh), 0), dtype=np.bool_))
         boxes_cxcywh = boxes_xywh.copy()
         boxes_cxcywh[:, :2] += boxes_cxcywh[:, 2:] / 2
         targets = {
@@ -79,6 +85,7 @@ class CourtAugment:
             "keypoints": normalized_to_pixels(keypoints, width, height),
             "bboxes": boxes_cxcywh,
             "labels": sample.get("labels", np.zeros(0, dtype=np.int64)),
+            "attributes": [tuple(row.tolist()) for row in attributes],
         }
         if "mask" in sample:
             targets["mask"] = sample["mask"]
@@ -97,6 +104,11 @@ class CourtAugment:
             boxes_xywh[:, :2] -= boxes_xywh[:, 2:] / 2
             output["boxes_xywh"] = boxes_xywh
             output["labels"] = np.array(transformed["labels"], dtype=np.int64)
+            if "attributes" in sample:
+                output["attributes"] = np.array(transformed["attributes"], dtype=np.bool_).reshape(
+                    len(boxes_xywh),
+                    sample["attributes"].shape[1],
+                )
         return self.hflip(output)
 
 

@@ -22,8 +22,9 @@ dataset-root/
 
 The `masks`, `keypoints`, and `detections` directories are only created when those annotations are exported.
 Mask files are grayscale WebP bitfields. Bit `0..5` maps to the mask order above.
-Detection files are compressed NumPy archives with normalized top-left `boxes_xywh`
-and per-box `category_names` arrays. Samples without detection annotations get empty arrays.
+Detection files are compressed NumPy archives with normalized top-left `boxes_xywh`,
+per-box `category_names`, boolean `attributes`, and `attribute_names` arrays. Samples
+without detection annotations get empty arrays.
 
 To export original labelled subdatasets into that layout:
 

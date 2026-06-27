@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import courts_and_fields as cnf
-import cv2
 import numpy as np
 import torch
 from fastapi import FastAPI, File, Form, UploadFile
@@ -20,7 +19,6 @@ import perception_training as pt
 from perception_training.detection.model import CourtDetector
 from perception_training.segmentation.model import CourtSegmenter
 
-POLYGON_SIMPLIFICATION_RATIO = 0.002
 CourtType = Literal["nba", "fiba"]
 COURTS: dict[CourtType, cnf.BasketCourt] = {
     "nba": cnf.NbaCourt,
@@ -160,9 +158,10 @@ def predict_segmentation(
         homography_iterations,
     )
 
-    fitted_polygons = (
-        mask_polygons(fitted_masks.numpy() >= threshold, fitted_labels) if fitted_masks is not None else []
-    )
+    fitted_polygons = []
+    if fitted_masks is not None:
+        fitted_mask_array = fitted_masks.numpy() >= threshold
+        fitted_polygons = mask_polygons(fitted_mask_array, fitted_labels)
     backboard_masks = probabilities[backboard_indices].numpy() >= threshold
     backboard_polygons = mask_polygons(backboard_masks, backboard_labels)
     return Segmentation(
@@ -176,17 +175,16 @@ def predict_segmentation(
 
 
 def mask_polygons(masks: Bool[np.ndarray, "N H W"], labels: tuple[str, ...]) -> list[Polygon]:
-    height, width = masks.shape[-2:]
     polygons = []
     for label, mask in zip(labels, masks, strict=True):
-        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for contour in contours:
-            epsilon = POLYGON_SIMPLIFICATION_RATIO * cv2.arcLength(contour, closed=True)
-            simplified = cv2.approxPolyDP(contour, epsilon, closed=True)
-            if len(simplified) < 3:
-                continue
-            points = [Point(x=x / (width - 1), y=y / (height - 1)) for x, y in simplified[:, 0, :].tolist()]
-            polygons.append(Polygon(label=label, points=points))
+        if not mask.any():
+            continue
+        if "3pt_area" in label:
+            point_tuples = pt.polygons.mask_polygon(mask)
+        else:
+            point_tuples = pt.polygons.projected_rectangle_mask_polygon(mask)
+        points = [Point(x=x, y=y) for x, y in point_tuples]
+        polygons.append(Polygon(label=label, points=points))
     return polygons
 
 

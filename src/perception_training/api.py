@@ -177,7 +177,7 @@ def predict_segmentation(
 def mask_polygons(masks: Bool[np.ndarray, "N H W"], labels: tuple[str, ...]) -> list[Polygon]:
     polygons = []
     for label, mask in zip(labels, masks, strict=True):
-        if not mask.any():
+        if mask.sum() < 3:
             continue
         if "3pt_area" in label:
             point_tuples = pt.polygons.mask_polygon(mask)

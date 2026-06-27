@@ -76,8 +76,20 @@ def projected_rectangle_mask_polygon(mask: Bool[np.ndarray, "H W"]) -> list[Poin
     diagonal = (width**2 + height**2) ** 0.5
     candidates = []
     for ratio in CONTOUR_EPSILON_RATIOS:
-        polygon = cv2.approxPolyDP(contour, ratio * perimeter, closed=True)
-        if not 4 <= len(polygon) <= max_points:
+        epsilon = ratio * perimeter
+        polygon = cv2.approxPolyDP(contour, epsilon, closed=True)
+        if len(polygon) > max_points:
+            low = epsilon
+            high = perimeter
+            for _ in range(APPROXIMATION_SEARCH_STEPS):
+                mid = (low + high) / 2
+                candidate = cv2.approxPolyDP(contour, mid, closed=True)
+                if len(candidate) > max_points:
+                    low = mid
+                else:
+                    high = mid
+                    polygon = candidate
+        if not 3 <= len(polygon) <= max_points:
             continue
         polygon_contour = polygon[:, 0, :].astype(np.float32)
         distances = []

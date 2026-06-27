@@ -145,17 +145,28 @@ def predict_segmentation(
     keypoints = prediction["keypoints"][0]
     visibility = prediction["visibility"][0]
 
+    backboard_indices = [index for index, label in enumerate(model.mask_names) if label.endswith("_backboard")]
+    fitted_indices = [index for index, label in enumerate(model.mask_names) if not label.endswith("_backboard")]
+    fitted_labels = tuple(model.mask_names[index] for index in fitted_indices)
+    backboard_labels = tuple(model.mask_names[index] for index in backboard_indices)
+
     fitted_homography, fitted_masks = fit_homography(
-        probabilities,
+        probabilities[fitted_indices],
         keypoints,
         visibility,
-        model,
+        fitted_labels,
+        model.keypoint_names,
         court_type,
         homography_iterations,
     )
 
+    fitted_polygons = (
+        mask_polygons(fitted_masks.numpy() >= threshold, fitted_labels) if fitted_masks is not None else []
+    )
+    backboard_masks = probabilities[backboard_indices].numpy() >= threshold
+    backboard_polygons = mask_polygons(backboard_masks, backboard_labels)
     return Segmentation(
-        polygons=mask_polygons(fitted_masks.numpy() >= threshold, model.mask_names) if fitted_masks is not None else [],
+        polygons=[*fitted_polygons, *backboard_polygons],
         keypoints=[
             Keypoint(position=(float(x), float(y)), visible=bool(score >= threshold))
             for (x, y), score in zip(keypoints, visibility, strict=True)
@@ -183,7 +194,8 @@ def fit_homography(
     probabilities: Float[Tensor, "N H W"],
     keypoints: Float[np.ndarray, "K 2"],
     visibility: Float[np.ndarray, "K"],
-    model: CourtSegmenter,
+    mask_names: tuple[str, ...],
+    keypoint_names: tuple[str, ...],
     court_type: CourtType,
     max_iterations: int,
 ) -> tuple[Homography | None, Float[Tensor, "N H W"] | None]:
@@ -192,8 +204,8 @@ def fit_homography(
         return None, None
     matrix, fitted_masks, score = pt.homography.fit_court(
         COURTS[court_type],
-        model.mask_names,
-        model.keypoint_names,
+        mask_names,
+        keypoint_names,
         probabilities,
         keypoints,
         visible,

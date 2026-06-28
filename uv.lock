@@ -2429,7 +2429,7 @@ wheels = [
 [[package]]
 name = "sportkit"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=add-sportkit-polygons#4495c313cc57a9385414ae3ea30970ee51817d1c" }
+source = { git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=add-sportkit-polygons#32dd399ae7675951b629f1ba9fde5af8b2f82adc" }
 dependencies = [
     { name = "jaxtyping" },
     { name = "loguru" },

@@ -13,8 +13,8 @@ from torch.utils.data import Dataset
 
 from perception_training.constants import IMAGE_MEAN, IMAGE_STD
 
-BASKETBALL_MASK_NAMES = tuple(sk.NbaCourt.areas())
-BASKETBALL_KEYPOINT_NAMES = tuple(sk.NbaCourt.keypoints())
+BASKETBALL_MASK_NAMES = tuple(sk.courts.NbaCourt.areas())
+BASKETBALL_KEYPOINT_NAMES = tuple(sk.courts.NbaCourt.keypoints())
 BASKETBALL_DETECTION_CLASSES = ("ball", "player", "number", "referee", "rim")
 
 

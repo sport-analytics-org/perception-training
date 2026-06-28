@@ -11,9 +11,9 @@ import perception_training as pt
 from perception_training.flip import flip_torch
 
 CourtType = Literal["nba", "fiba"]
-COURTS: dict[CourtType, sk.BasketCourt] = {
-    "nba": sk.NbaCourt,
-    "fiba": sk.FibaCourt,
+COURTS: dict[CourtType, sk.courts.BasketCourt] = {
+    "nba": sk.courts.NbaCourt,
+    "fiba": sk.courts.FibaCourt,
 }
 
 
@@ -92,7 +92,7 @@ def fit_homography_to_masks(
     prediction: dict[str, Tensor],
     mask_names: tuple[str, ...],
     keypoint_names: tuple[str, ...],
-    court: sk.BasketCourt,
+    court: sk.courts.BasketCourt,
 ) -> dict[str, Tensor]:
     mask_names = tuple(court.planar_areas())
     mask_count = len(mask_names)

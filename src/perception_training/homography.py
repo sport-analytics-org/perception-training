@@ -14,7 +14,7 @@ DEFAULT_MAX_ITERATIONS = 120
 
 
 def fit_court(
-    court: sk.BasketCourt,
+    court: sk.courts.BasketCourt,
     mask_names: tuple[str, ...],
     keypoint_names: tuple[str, ...],
     probabilities: Float[Tensor, "N H W"],
@@ -102,7 +102,7 @@ def centered_homography() -> Float[np.ndarray, "3 3"]:
     return find_keypoints_homography(CENTERED_SOURCE, CENTERED_TARGET)
 
 
-def normalized_keypoints(court: sk.BasketCourt, labels: tuple[str, ...]) -> Float[np.ndarray, "K 2"]:
+def normalized_keypoints(court: sk.courts.BasketCourt, labels: tuple[str, ...]) -> Float[np.ndarray, "K 2"]:
     points_by_name = court.keypoints()
     points = np.array([points_by_name[name] for name in labels], dtype=np.float64)
     x = (points[:, 0] + court.half_length) / court.length
@@ -111,7 +111,7 @@ def normalized_keypoints(court: sk.BasketCourt, labels: tuple[str, ...]) -> Floa
 
 
 def template_masks(
-    court: sk.BasketCourt,
+    court: sk.courts.BasketCourt,
     labels: tuple[str, ...],
     width: int,
     device: torch.device,

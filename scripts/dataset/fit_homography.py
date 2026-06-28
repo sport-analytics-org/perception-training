@@ -17,8 +17,8 @@ COURT_OPTION = typer.Option("nba", help="Court template to fit: nba or fiba.")
 RASTER_SIZE = (1280, 720)
 
 COURTS = {
-    "nba": sk.NbaCourt,
-    "fiba": sk.FibaCourt,
+    "nba": sk.courts.NbaCourt,
+    "fiba": sk.courts.FibaCourt,
 }
 
 
@@ -57,7 +57,7 @@ def main(
 
 def load_masks(
     mask_path: Path,
-    court: sk.BasketCourt,
+    court: sk.courts.BasketCourt,
     size: tuple[int, int],
 ) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
     mask_names = tuple(court.planar_areas())
@@ -71,7 +71,7 @@ def load_masks(
 
 
 def load_template_masks(
-    court_template: sk.BasketCourt,
+    court_template: sk.courts.BasketCourt,
     labels: tuple[str, ...],
     width: int,
 ) -> Float[Tensor, "N H W"]:

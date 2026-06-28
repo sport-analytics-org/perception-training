@@ -11,10 +11,10 @@ app = typer.Typer(help="Generate dataset keypoint shards from homography shards.
 HOMOGRAPHY_ARGUMENT = typer.Argument(help="Dataset homography shard JSON.")
 OUTPUT_OPTION = typer.Option(None, help="Output keypoint shard JSON. Defaults to the matching keypoints shard.")
 COURTS = {
-    "fiba": sk.FibaCourt,
-    "nba": sk.NbaCourt,
+    "fiba": sk.courts.FibaCourt,
+    "nba": sk.courts.NbaCourt,
 }
-KEYPOINT_NAMES = tuple(sk.NbaCourt.keypoints())
+KEYPOINT_NAMES = tuple(sk.courts.NbaCourt.keypoints())
 
 
 @app.command()
@@ -51,7 +51,7 @@ def keypoint_path_for(homography_path: Path) -> Path:
 
 
 def project_keypoints(
-    court: sk.BasketCourt,
+    court: sk.courts.BasketCourt,
     homography: Float[np.ndarray, "3 3"],
 ) -> tuple[Float[np.ndarray, "K 2"], np.ndarray]:
     points = normalized_keypoints(court)
@@ -69,7 +69,7 @@ def project_keypoints(
     return keypoints, visibility
 
 
-def normalized_keypoints(court: sk.BasketCourt) -> Float[np.ndarray, "K 2"]:
+def normalized_keypoints(court: sk.courts.BasketCourt) -> Float[np.ndarray, "K 2"]:
     points_by_name = court.keypoints()
     points = np.array([points_by_name[name] for name in KEYPOINT_NAMES], dtype=np.float64)
     x = (points[:, 0] + court.half_length) / court.length

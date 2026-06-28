@@ -81,7 +81,7 @@ def main(
 
         is_fiba_dataset = dataset.startswith("fiba_")
         court_name = "fiba" if is_fiba_dataset else "nba"
-        court = sk.FibaCourt if is_fiba_dataset else sk.NbaCourt
+        court = sk.courts.FibaCourt if is_fiba_dataset else sk.courts.NbaCourt
         homography_mask_names = tuple(court.planar_areas())
         homography_probabilities = probabilities[: len(homography_mask_names)]
         visible = visibility >= 0.5
@@ -152,7 +152,7 @@ def sample_by_dataset(image_paths: list[Path], count: int, datasets: tuple[str, 
 
 
 def render_at_image_size(
-    court: sk.BasketCourt,
+    court: sk.courts.BasketCourt,
     mask_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
     size: tuple[int, int],
@@ -164,7 +164,7 @@ def render_at_image_size(
 
 
 def project_keypoints(
-    court: sk.BasketCourt,
+    court: sk.courts.BasketCourt,
     keypoint_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
 ) -> tuple[Float[np.ndarray, "K 2"], Bool[np.ndarray, "K"]]:
@@ -222,7 +222,7 @@ def save_labels(
 
 
 def mask_surfaces(court_name: str, masks: Float[Tensor, "N H W"]) -> dict:
-    court = sk.FibaCourt if court_name == "fiba" else sk.NbaCourt
+    court = sk.courts.FibaCourt if court_name == "fiba" else sk.courts.NbaCourt
     labels = tuple(court.planar_areas())
     surfaces = {}
     for label, mask in zip(labels, masks, strict=True):

@@ -20,9 +20,9 @@ from perception_training.detection.model import CourtDetector
 from perception_training.segmentation.model import CourtSegmenter
 
 CourtType = Literal["nba", "fiba"]
-COURTS: dict[CourtType, sk.BasketCourt] = {
-    "nba": sk.NbaCourt,
-    "fiba": sk.FibaCourt,
+COURTS: dict[CourtType, sk.courts.BasketCourt] = {
+    "nba": sk.courts.NbaCourt,
+    "fiba": sk.courts.FibaCourt,
 }
 
 

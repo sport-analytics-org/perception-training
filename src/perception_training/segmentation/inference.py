@@ -74,7 +74,7 @@ def predict(
         output["keypoints"] = torch.stack(keypoints_by_scale).mean(dim=0)
         output["visibility"] = torch.stack(visibility_by_scale).mean(dim=0)
     if fit_homography:
-        output = fit_homography_to_masks(output, mask_names, keypoint_names, COURTS[court_type])
+        output = fit_homography_to_masks(output, keypoint_names, COURTS[court_type])
     if output_size is not None:
         output["masks"] = F.interpolate(output["masks"], size=output_size, mode="bilinear", align_corners=False)
 
@@ -90,7 +90,6 @@ def predict(
 
 def fit_homography_to_masks(
     prediction: dict[str, Tensor],
-    mask_names: tuple[str, ...],
     keypoint_names: tuple[str, ...],
     court: sk.courts.BasketCourt,
 ) -> dict[str, Tensor]:
@@ -100,11 +99,8 @@ def fit_homography_to_masks(
     source_keypoints = pt.homography.normalized_keypoints(court, keypoint_names)
     source_keypoints_tensor = torch.as_tensor(source_keypoints, dtype=target_masks.dtype, device=target_masks.device)
     width = target_masks.shape[-1]
-    masks = []
-    for label in mask_names:
-        image = court.get_mask_image(label, width).convert("L")
-        masks.append(torch.as_tensor(np.asarray(image) / 255, dtype=target_masks.dtype, device=target_masks.device))
-    source_masks = torch.stack(masks)
+    source_masks = pt.homography.template_masks(court, mask_names, width, target_masks.device)
+    source_masks = source_masks.to(dtype=target_masks.dtype)
 
     predicted_keypoints = prediction["keypoints"]
     initial_homographies = [

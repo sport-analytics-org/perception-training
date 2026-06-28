@@ -99,6 +99,7 @@ def main(
             dataset_root,
             image_path,
             court_name,
+            homography_mask_names,
             fitted_original,
             fitted_homography,
             fitted_keypoints,
@@ -187,6 +188,7 @@ def save_labels(
     dataset_root: Path,
     image_path: Path,
     court_name: str,
+    mask_names: tuple[str, ...],
     masks: Float[Tensor, "N H W"],
     homography: Float[np.ndarray, "3 3"],
     keypoints: Float[np.ndarray, "K 2"],
@@ -199,7 +201,9 @@ def save_labels(
 
     mask_path = dataset_root / "masks" / image_relative.with_suffix(".json")
     mask_path.parent.mkdir(parents=True, exist_ok=True)
-    mask_path.write_text(json.dumps(mask_surfaces(court_name, masks), indent=2) + "\n")
+    polygons = masks_to_polygons(masks)
+    masks_json = {label: polygon.to_dict() for label, polygon in zip(mask_names, polygons, strict=True)}
+    mask_path.write_text(json.dumps(masks_json, indent=2) + "\n")
 
     homography_path = dataset_root / "homography" / dataset / f"{shard}.json"
     update_json(
@@ -221,14 +225,8 @@ def save_labels(
     update_json(keypoint_path, "keypoints", image_key, {"court": court_name, "points": points})
 
 
-def mask_surfaces(court_name: str, masks: Float[Tensor, "N H W"]) -> dict:
-    court = sk.courts.FibaCourt if court_name == "fiba" else sk.courts.NbaCourt
-    labels = tuple(court.planar_areas())
-    surfaces = {}
-    for label, mask in zip(labels, masks, strict=True):
-        polygon = sk.polygons.trace_mask(mask.numpy() > 0.5)
-        surfaces[label] = polygon.to_dict()
-    return surfaces
+def masks_to_polygons(masks: Float[Tensor, "N H W"]) -> list[sk.polygons.Polygon]:
+    return [sk.polygons.trace_mask(mask.numpy() > 0.5) for mask in masks]
 
 
 def update_json(path: Path, key: str, image_key: str, value: dict) -> None:

@@ -3,18 +3,18 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
-import courts_and_fields as cnf
 import numpy as np
+import sportkit as sk
 import torch
-from jaxtyping import Float, Int64, UInt8
+from jaxtyping import Bool, Float, Int64, UInt8
 from PIL import Image
 from torch import Tensor
 from torch.utils.data import Dataset
 
 from perception_training.constants import IMAGE_MEAN, IMAGE_STD
 
-BASKETBALL_MASK_NAMES = tuple(cnf.NbaCourt.areas())
-BASKETBALL_KEYPOINT_NAMES = tuple(cnf.NbaCourt.keypoints())
+BASKETBALL_MASK_NAMES = tuple(sk.courts.NbaCourt.areas())
+BASKETBALL_KEYPOINT_NAMES = tuple(sk.courts.NbaCourt.keypoints())
 BASKETBALL_DETECTION_CLASSES = ("ball", "player", "number", "referee", "rim")
 
 
@@ -107,7 +107,7 @@ class CourtDataset(Dataset):
         image = image.resize((width, height), Image.Resampling.BILINEAR)
         sample: NumpySample = {"image": np.array(image, dtype=np.uint8)}
         if self.load_masks:
-            sample["mask"] = read_mask(annotation_path(self.root, image_path, "masks", ".webp"), self.image_size)
+            sample["mask"] = read_mask(annotation_path(self.root, image_path, "masks", ".json"), self.image_size)
         if self.load_keypoints:
             keypoints, visibility = read_keypoints(annotation_path(self.root, image_path, "keypoints", ".json"))
             sample["keypoints"] = keypoints
@@ -132,10 +132,20 @@ def annotation_path(root: Path, image_path: Path, annotation_dir: str, suffix: s
 
 def read_mask(path: Path, image_size: tuple[int, int]) -> Float[np.ndarray, "H W N"]:
     height, width = image_size
-    bitfield = Image.open(path).convert("L").resize((width, height), Image.Resampling.NEAREST)
-    bitfield_array = np.array(bitfield, dtype=np.uint8)
-    masks = [(bitfield_array & (1 << bit)) > 0 for bit in range(len(BASKETBALL_MASK_NAMES))]
-    return np.stack(masks, axis=-1).astype(np.float32)
+    masks_by_label = read_polygon_masks(path, width, height)
+    masks = np.zeros((len(BASKETBALL_MASK_NAMES), height, width), dtype=bool)
+    for index, label in enumerate(BASKETBALL_MASK_NAMES):
+        masks[index] = masks_by_label[label]
+    return np.moveaxis(masks, 0, -1).astype(np.float32)
+
+
+def read_polygon_masks(path: Path, width: int, height: int) -> dict[str, Bool[np.ndarray, "H W"]]:
+    data = json.loads(path.read_text())
+    masks = {}
+    for label, polygon_data in data.items():
+        polygon = sk.polygons.Polygon.from_dict(polygon_data)
+        masks[label] = polygon.rasterize(width, height)
+    return masks
 
 
 def read_keypoints(path: Path) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarray, "*K"]]:

@@ -10,25 +10,25 @@ Input datasets are expected to be flat train/val folders:
 dataset-root/
   train/
     images/*.jpg
-    masks/*.webp
+    masks/*.json
     keypoints/*.json
     detections/*.npz
   val/
     images/*.jpg
-    masks/*.webp
+    masks/*.json
     keypoints/*.json
     detections/*.npz
 ```
 
 The `masks`, `keypoints`, and `detections` directories are only created when those annotations are exported.
-Mask files are grayscale WebP bitfields. Bit `0..5` maps to the mask order above.
+Mask files are JSON objects keyed by mask label, with each value holding that mask surface's normalized polygon points.
 Detection files are compressed NumPy archives with normalized top-left `boxes_xywh`
 and per-box `category_names` arrays. Samples without detection annotations get empty arrays.
 
 To export original labelled subdatasets into that layout:
 
 ```bash
-uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/output \
+uv run scripts/export_dataset.py /path/to/basketball-imgs /path/to/output \
   --train-dataset nba_mixed \
   --train-dataset fiba_borgo \
   --val-dataset nba_detection1
@@ -47,7 +47,7 @@ uv run python scripts/export_dataset.py /path/to/basketball-imgs /path/to/output
 ## Segmentation
 
 The current basketball segmentation model predicts six court masks from broadcast frames. Mask names come from
-`courts_and_fields.NbaCourt.areas()` and are ordered as court, three-point area, painted area, with left before right.
+`sportkit.NbaCourt.areas()` and are ordered as court, three-point area, painted area, with left before right.
 
 Train the basketball segmentation model:
 
@@ -131,10 +131,10 @@ call only one model. Set `court_type=fiba` for FIBA basketball datasets.
 
 ## Homography fitting
 
-Fit a centered-initialization homography to a labeled basketball raster mask:
+Fit a centered-initialization homography to a labeled basketball mask JSON:
 
 ```bash
-uv run python scripts/dataset/fit_homography.py /path/to/mask.webp --court fiba
+uv run scripts/dataset/fit_homography.py /path/to/mask.json --court fiba
 ```
 
-The script reads raster bitfield masks directly and prints the fitted homography plus initial/final IoU.
+The script rasterizes the polygon surfaces internally and prints the fitted homography plus initial/final IoU.

@@ -393,23 +393,6 @@ wheels = [
 ]
 
 [[package]]
-name = "courts-and-fields"
-version = "0.1.0"
-source = { git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git#b6f85b03168db73d520d55440b48281cd728cb8c" }
-dependencies = [
-    { name = "jaxtyping" },
-    { name = "loguru" },
-    { name = "numpy" },
-    { name = "pillow" },
-    { name = "resvg" },
-    { name = "torch" },
-    { name = "tqdm" },
-    { name = "trimesh" },
-    { name = "typer" },
-    { name = "viser" },
-]
-
-[[package]]
 name = "cuda-bindings"
 version = "13.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1513,7 +1496,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "albumentations" },
-    { name = "courts-and-fields" },
     { name = "fastapi" },
     { name = "jaxtyping" },
     { name = "loguru" },
@@ -1522,6 +1504,7 @@ dependencies = [
     { name = "pillow" },
     { name = "python-multipart" },
     { name = "rfdetr", extra = ["train"] },
+    { name = "sportkit" },
     { name = "supervision" },
     { name = "timm" },
     { name = "torch" },
@@ -1539,7 +1522,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "albumentations", specifier = "==2.0.8" },
-    { name = "courts-and-fields", git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git" },
     { name = "fastapi", specifier = ">=0.124.0" },
     { name = "jaxtyping", specifier = ">=0.3.0" },
     { name = "loguru", specifier = ">=0.7.3" },
@@ -1548,6 +1530,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "rfdetr", extras = ["train"], specifier = ">=1.7.1" },
+    { name = "sportkit", git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=main" },
     { name = "supervision", specifier = ">=0.28.0" },
     { name = "timm", specifier = ">=1.0.27" },
     { name = "torch", specifier = ">=2.4" },
@@ -2441,6 +2424,24 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "sportkit"
+version = "0.1.0"
+source = { git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=main#e772c17ed2ce2084f46f55466c2c3d6bac463cb1" }
+dependencies = [
+    { name = "jaxtyping" },
+    { name = "loguru" },
+    { name = "numpy" },
+    { name = "opencv-python-headless" },
+    { name = "pillow" },
+    { name = "resvg" },
+    { name = "torch" },
+    { name = "tqdm" },
+    { name = "trimesh" },
+    { name = "typer" },
+    { name = "viser" },
 ]
 
 [[package]]

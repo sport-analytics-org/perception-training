@@ -3,11 +3,11 @@ import json
 import random
 from pathlib import Path
 
-import courts_and_fields as cnf
 import numpy as np
+import sportkit as sk
 import torch
 import typer
-from jaxtyping import Bool, Float, UInt8
+from jaxtyping import Bool, Float
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
 from torch import Tensor
@@ -56,9 +56,12 @@ def main(
     panel_dir.mkdir(parents=True, exist_ok=True)
 
     image_paths = unlabelled_images(dataset_root)
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-    )
+    accelerator = "cpu"
+    if torch.backends.mps.is_available():
+        accelerator = "mps"
+    if torch.cuda.is_available():
+        accelerator = "cuda"
+    device = torch.device(accelerator)
     model = CourtSegmenter.load(checkpoint, device)
     rng = random.Random(seed)
     samples = sample_by_dataset(image_paths, count_per_dataset * 10, tuple(datasets), rng)
@@ -81,7 +84,7 @@ def main(
 
         is_fiba_dataset = dataset.startswith("fiba_")
         court_name = "fiba" if is_fiba_dataset else "nba"
-        court = cnf.FibaCourt if is_fiba_dataset else cnf.NbaCourt
+        court = sk.courts.FibaCourt if is_fiba_dataset else sk.courts.NbaCourt
         homography_mask_names = tuple(court.planar_areas())
         homography_probabilities = probabilities[: len(homography_mask_names)]
         visible = visibility >= 0.5
@@ -99,6 +102,7 @@ def main(
             dataset_root,
             image_path,
             court_name,
+            homography_mask_names,
             fitted_original,
             fitted_homography,
             fitted_keypoints,
@@ -134,7 +138,7 @@ def unlabelled_images(dataset_root: Path) -> list[Path]:
     masks_root = dataset_root / "masks"
     paths = []
     for image_path in sorted(images_root.glob("*/*/*.jpg")):
-        mask_path = masks_root / image_path.relative_to(images_root).with_suffix(".webp")
+        mask_path = masks_root / image_path.relative_to(images_root).with_suffix(".json")
         if not mask_path.is_file():
             paths.append(image_path)
     return paths
@@ -152,7 +156,7 @@ def sample_by_dataset(image_paths: list[Path], count: int, datasets: tuple[str, 
 
 
 def render_at_image_size(
-    court: cnf.BasketCourt,
+    court: sk.courts.BasketCourt,
     mask_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
     size: tuple[int, int],
@@ -164,7 +168,7 @@ def render_at_image_size(
 
 
 def project_keypoints(
-    court: cnf.BasketCourt,
+    court: sk.courts.BasketCourt,
     keypoint_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
 ) -> tuple[Float[np.ndarray, "K 2"], Bool[np.ndarray, "K"]]:
@@ -187,6 +191,7 @@ def save_labels(
     dataset_root: Path,
     image_path: Path,
     court_name: str,
+    mask_names: tuple[str, ...],
     masks: Float[Tensor, "N H W"],
     homography: Float[np.ndarray, "3 3"],
     keypoints: Float[np.ndarray, "K 2"],
@@ -197,9 +202,12 @@ def save_labels(
     dataset, shard = image_relative.parts[:2]
     image_key = str(Path(*image_relative.parts[1:]))
 
-    mask_path = dataset_root / "masks" / image_relative.with_suffix(".webp")
+    mask_path = dataset_root / "masks" / image_relative.with_suffix(".json")
     mask_path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(bitfield(masks)).save(mask_path, lossless=True)
+    polygons = masks_to_polygons(masks)
+    labelled_polygons = zip(mask_names, polygons, strict=True)
+    masks_json = {label: polygon.to_dict() for label, polygon in labelled_polygons}
+    mask_path.write_text(json.dumps(masks_json, indent=2) + "\n")
 
     homography_path = dataset_root / "homography" / dataset / f"{shard}.json"
     update_json(
@@ -221,11 +229,8 @@ def save_labels(
     update_json(keypoint_path, "keypoints", image_key, {"court": court_name, "points": points})
 
 
-def bitfield(masks: Float[Tensor, "N H W"]) -> UInt8[np.ndarray, "H W"]:
-    output = np.zeros(masks.shape[-2:], dtype=np.uint8)
-    for index, mask in enumerate(masks):
-        output[mask.numpy() > 0.5] |= np.uint8(1 << index)
-    return output
+def masks_to_polygons(masks: Float[Tensor, "N H W"]) -> list[sk.polygons.Polygon]:
+    return [sk.polygons.trace_mask(mask.numpy() > 0.5) for mask in masks]
 
 
 def update_json(path: Path, key: str, image_key: str, value: dict) -> None:

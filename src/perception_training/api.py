@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
-import courts_and_fields as cnf
 import numpy as np
+import sportkit as sk
 import torch
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,9 +20,9 @@ from perception_training.detection.model import CourtDetector
 from perception_training.segmentation.model import CourtSegmenter
 
 CourtType = Literal["nba", "fiba"]
-COURTS: dict[CourtType, cnf.BasketCourt] = {
-    "nba": cnf.NbaCourt,
-    "fiba": cnf.FibaCourt,
+COURTS: dict[CourtType, sk.courts.BasketCourt] = {
+    "nba": sk.courts.NbaCourt,
+    "fiba": sk.courts.FibaCourt,
 }
 
 
@@ -179,11 +179,8 @@ def mask_polygons(masks: Bool[np.ndarray, "N H W"], labels: tuple[str, ...]) -> 
     for label, mask in zip(labels, masks, strict=True):
         if mask.sum() < 3:
             continue
-        if "3pt_area" in label:
-            point_tuples = pt.polygons.mask_polygon(mask)
-        else:
-            point_tuples = pt.polygons.projected_rectangle_mask_polygon(mask)
-        points = [Point(x=x, y=y) for x, y in point_tuples]
+        traced = sk.polygons.trace_mask(mask)
+        points = [Point(x=x, y=y) for x, y in traced.points]
         polygons.append(Polygon(label=label, points=points))
     return polygons
 

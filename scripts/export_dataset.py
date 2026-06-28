@@ -93,7 +93,7 @@ def export_shard(
         for image_key in sorted(export_keys):
             image_name = Path(image_key).name
             image_member = require_member(members, f"images/{image_name}")
-            mask_name = f"masks/{Path(image_name).with_suffix('.webp')}"
+            mask_name = f"masks/{Path(image_name).with_suffix('.json')}"
             keypoint_data = keypoints.get(image_key)
             should_export_mask = options.masks and image_key in reviewed_keys
             if should_export_mask and options.keypoints and keypoint_data is None:
@@ -106,7 +106,7 @@ def export_shard(
             write_member(shard, image_member, output_root / "images" / f"{name}.jpg")
             if should_export_mask:
                 mask_member = require_member(members, mask_name)
-                write_member(shard, mask_member, output_root / "masks" / f"{name}.webp")
+                write_member(shard, mask_member, output_root / "masks" / f"{name}.json")
             if should_export_mask and options.keypoints:
                 output = json.dumps(keypoint_data, indent=2) + "\n"
                 (output_root / "keypoints" / f"{name}.json").write_text(output)
@@ -147,7 +147,11 @@ def reviewed_images(metadata: dict, members: dict[str, tarfile.TarInfo]) -> set[
     if reviews:
         return {image_key for image_key, masks in reviews.items() if all(masks.values())}
     if metadata.get("approvals", {}).get("masks"):
-        return {Path(member).with_suffix(".jpg").name for member in members if member.startswith("masks/")}
+        return {
+            Path(member).with_suffix(".jpg").name
+            for member in members
+            if member.startswith("masks/") and member.endswith(".json")
+        }
     return set()
 
 

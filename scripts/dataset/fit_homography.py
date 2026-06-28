@@ -8,8 +8,7 @@ import typer
 from jaxtyping import Float
 from torch import Tensor
 
-from perception_training.homography import centered_homography, fit_homography
-from perception_training.warp import warp
+import perception_training as pt
 
 app = typer.Typer(help="Fit a basketball court homography from polygon mask JSON.")
 MASK_ARGUMENT = typer.Argument(help="Polygon mask JSON.")
@@ -30,15 +29,17 @@ def main(
     mask_path = mask.expanduser().resolve()
 
     court_template = COURTS[court]
-    target_masks_by_label = load_masks(mask_path, RASTER_SIZE)
+    width, height = RASTER_SIZE
+    target_masks_by_label = pt.dataset.read_polygon_masks(mask_path, width, height)
     labels = tuple(target_masks_by_label)
-    target_masks = torch.stack(tuple(target_masks_by_label.values()))
-    source_masks = load_template_masks(court_template, labels, target_masks.shape[-1])
+    target_mask_tensors = [torch.tensor(mask.astype(np.float32)) for mask in target_masks_by_label.values()]
+    target_masks = torch.stack(target_mask_tensors)
+    source_masks = pt.homography.template_masks(court_template, labels, width, torch.device("cpu"))
 
     mask_multipliers = [1.5 if "3pt_area" in label or "painted_area" in label else 1.0 for label in labels]
     multipliers = torch.tensor(mask_multipliers)
-    initial = torch.tensor(centered_homography(), dtype=target_masks.dtype)
-    homography = fit_homography(source_masks, target_masks, initial, multipliers)
+    initial = torch.tensor(pt.homography.centered_homography(), dtype=target_masks.dtype)
+    homography = pt.homography.fit_homography(source_masks, target_masks, initial, multipliers)
     homography = homography.numpy()
 
     initial_metrics = iou_metrics(source_masks, target_masks, initial.numpy())
@@ -57,33 +58,6 @@ def main(
     print(json.dumps(result, indent=2))
 
 
-def load_masks(
-    mask_path: Path,
-    size: tuple[int, int],
-) -> dict[str, Float[Tensor, "H W"]]:
-    data = json.loads(mask_path.read_text())
-    width, height = size
-    masks = {}
-    for label, points in data.items():
-        polygon = sk.polygons.Polygon.from_dict(points)
-        mask = polygon.rasterize(width, height).astype(np.float32)
-        masks[label] = torch.tensor(mask)
-    return masks
-
-
-def load_template_masks(
-    court_template: sk.courts.BasketCourt,
-    labels: tuple[str, ...],
-    width: int,
-) -> Float[Tensor, "N H W"]:
-    masks = []
-    for label in labels:
-        image = court_template.get_mask_image(label, width).convert("L")
-        mask = np.asarray(image, dtype=np.float32) / 255
-        masks.append(torch.tensor(mask))
-    return torch.stack(masks)
-
-
 def iou_metrics(
     source_masks: Float[Tensor, "N H W"],
     target_masks: Float[Tensor, "N H W"],
@@ -91,7 +65,7 @@ def iou_metrics(
 ) -> dict[str, float]:
     output_shape = (target_masks.shape[-2], target_masks.shape[-1])
     homography_tensor = torch.tensor(homography, dtype=source_masks.dtype, device=source_masks.device)
-    predictions = warp(source_masks, homography_tensor, output_shape)
+    predictions = pt.warp.warp(source_masks, homography_tensor, output_shape)
     scores = []
     areas = []
     for prediction_tensor, target_tensor in zip(predictions, target_masks, strict=True):

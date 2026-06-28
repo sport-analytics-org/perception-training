@@ -6,7 +6,7 @@ from typing import NotRequired, TypedDict
 import numpy as np
 import sportkit as sk
 import torch
-from jaxtyping import Float, Int64, UInt8
+from jaxtyping import Bool, Float, Int64, UInt8
 from PIL import Image
 from torch import Tensor
 from torch.utils.data import Dataset
@@ -132,12 +132,20 @@ def annotation_path(root: Path, image_path: Path, annotation_dir: str, suffix: s
 
 def read_mask(path: Path, image_size: tuple[int, int]) -> Float[np.ndarray, "H W N"]:
     height, width = image_size
-    data = json.loads(path.read_text())
-    polygons = {label: sk.polygons.Polygon.from_dict(points) for label, points in data.items()}
+    masks_by_label = read_polygon_masks(path, width, height)
     masks = np.zeros((len(BASKETBALL_MASK_NAMES), height, width), dtype=bool)
     for index, label in enumerate(BASKETBALL_MASK_NAMES):
-        masks[index] = polygons[label].rasterize(width, height)
+        masks[index] = masks_by_label[label]
     return np.moveaxis(masks, 0, -1).astype(np.float32)
+
+
+def read_polygon_masks(path: Path, width: int, height: int) -> dict[str, Bool[np.ndarray, "H W"]]:
+    data = json.loads(path.read_text())
+    masks = {}
+    for label, polygon_data in data.items():
+        polygon = sk.polygons.Polygon.from_dict(polygon_data)
+        masks[label] = polygon.rasterize(width, height)
+    return masks
 
 
 def read_keypoints(path: Path) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarray, "*K"]]:

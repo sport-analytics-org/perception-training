@@ -226,8 +226,8 @@ def mask_surfaces(court_name: str, masks: Float[Tensor, "N H W"]) -> dict:
     labels = tuple(court.planar_areas())
     surfaces = {}
     for label, mask in zip(labels, masks, strict=True):
-        points = sk.polygons.recover_projected_rectangle(mask.numpy() > 0.5, snap_to_borders=True)
-        surfaces[label] = [{"x": x, "y": y} for x, y in points]
+        polygon = sk.polygons.trace_mask(mask.numpy() > 0.5)
+        surfaces[label] = polygon.to_json()
     return surfaces
 
 

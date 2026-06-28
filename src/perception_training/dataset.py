@@ -133,11 +133,10 @@ def annotation_path(root: Path, image_path: Path, annotation_dir: str, suffix: s
 def read_mask(path: Path, image_size: tuple[int, int]) -> Float[np.ndarray, "H W N"]:
     height, width = image_size
     data = json.loads(path.read_text())
-    surfaces = {
-        label: [(point["x"], point["y"]) for point in points]
-        for label, points in data.items()
-    }
-    masks = sk.polygons.rasterize_masks(surfaces, BASKETBALL_MASK_NAMES, (width, height))
+    polygons = {label: sk.polygons.Polygon.from_json(points) for label, points in data.items()}
+    masks = np.zeros((len(BASKETBALL_MASK_NAMES), height, width), dtype=bool)
+    for index, label in enumerate(BASKETBALL_MASK_NAMES):
+        masks[index] = polygons[label].rasterize((width, height))
     return np.moveaxis(masks, 0, -1).astype(np.float32)
 
 

@@ -179,11 +179,8 @@ def mask_polygons(masks: Bool[np.ndarray, "N H W"], labels: tuple[str, ...]) -> 
     for label, mask in zip(labels, masks, strict=True):
         if mask.sum() < 3:
             continue
-        if "3pt_area" in label:
-            point_tuples = sk.polygons.recover_largest_polygon(mask)
-        else:
-            point_tuples = sk.polygons.recover_projected_rectangle(mask)
-        points = [Point(x=x, y=y) for x, y in point_tuples]
+        traced = sk.polygons.trace_mask(mask)
+        points = [Point(x=x, y=y) for x, y in traced.points]
         polygons.append(Polygon(label=label, points=points))
     return polygons
 

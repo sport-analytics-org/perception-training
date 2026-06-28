@@ -140,10 +140,9 @@ def read_mask(path: Path, image_size: tuple[int, int]) -> Float[np.ndarray, "H W
 
 
 def read_polygon_masks(path: Path, width: int, height: int) -> dict[str, Bool[np.ndarray, "H W"]]:
-    data = json.loads(path.read_text())
+    polygons = sk.polygons.read_polygons(path)
     masks = {}
-    for label, polygon_data in data.items():
-        polygon = sk.polygons.Polygon.from_dict(polygon_data)
+    for label, polygon in polygons.items():
         masks[label] = polygon.rasterize(width, height)
     return masks
 

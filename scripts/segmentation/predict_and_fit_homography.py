@@ -206,8 +206,7 @@ def save_labels(
     mask_path.parent.mkdir(parents=True, exist_ok=True)
     polygons = masks_to_polygons(masks)
     labelled_polygons = zip(mask_names, polygons, strict=True)
-    masks_json = {label: polygon.to_dict() for label, polygon in labelled_polygons}
-    mask_path.write_text(json.dumps(masks_json, indent=2) + "\n")
+    sk.polygons.write_polygons(mask_path, dict(labelled_polygons))
 
     homography_path = dataset_root / "homography" / dataset / f"{shard}.json"
     update_json(

@@ -63,10 +63,12 @@ def load_masks(
 ) -> dict[str, Float[Tensor, "H W"]]:
     data = json.loads(mask_path.read_text())
     width, height = size
-    return {
-        label: torch.tensor(sk.polygons.Polygon.from_dict(points).rasterize(width, height).astype(np.float32))
-        for label, points in data.items()
-    }
+    masks = {}
+    for label, points in data.items():
+        polygon = sk.polygons.Polygon.from_dict(points)
+        mask = polygon.rasterize(width, height).astype(np.float32)
+        masks[label] = torch.tensor(mask)
+    return masks
 
 
 def load_template_masks(

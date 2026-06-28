@@ -56,9 +56,12 @@ def main(
     panel_dir.mkdir(parents=True, exist_ok=True)
 
     image_paths = unlabelled_images(dataset_root)
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-    )
+    accelerator = "cpu"
+    if torch.backends.mps.is_available():
+        accelerator = "mps"
+    if torch.cuda.is_available():
+        accelerator = "cuda"
+    device = torch.device(accelerator)
     model = CourtSegmenter.load(checkpoint, device)
     rng = random.Random(seed)
     samples = sample_by_dataset(image_paths, count_per_dataset * 10, tuple(datasets), rng)
@@ -202,7 +205,8 @@ def save_labels(
     mask_path = dataset_root / "masks" / image_relative.with_suffix(".json")
     mask_path.parent.mkdir(parents=True, exist_ok=True)
     polygons = masks_to_polygons(masks)
-    masks_json = {label: polygon.to_dict() for label, polygon in zip(mask_names, polygons, strict=True)}
+    labelled_polygons = zip(mask_names, polygons, strict=True)
+    masks_json = {label: polygon.to_dict() for label, polygon in labelled_polygons}
     mask_path.write_text(json.dumps(masks_json, indent=2) + "\n")
 
     homography_path = dataset_root / "homography" / dataset / f"{shard}.json"

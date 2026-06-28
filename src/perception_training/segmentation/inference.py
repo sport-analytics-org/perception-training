@@ -97,7 +97,8 @@ def fit_homography_to_masks(
     mask_count = len(mask_names)
     target_masks = prediction["masks"][:, :mask_count].sigmoid()
     source_keypoints = pt.homography.normalized_keypoints(court, keypoint_names)
-    source_keypoints_tensor = torch.as_tensor(source_keypoints, dtype=target_masks.dtype, device=target_masks.device)
+    tensor_options = {"dtype": target_masks.dtype, "device": target_masks.device}
+    source_keypoints_tensor = torch.as_tensor(source_keypoints, **tensor_options)
     width = target_masks.shape[-1]
     source_masks = pt.homography.template_masks(court, mask_names, width, target_masks.device)
     source_masks = source_masks.to(dtype=target_masks.dtype)
@@ -108,11 +109,13 @@ def fit_homography_to_masks(
         for keypoints in predicted_keypoints
     ]
     initial_homographies = np.stack(initial_homographies)
-    initial_homographies = torch.as_tensor(initial_homographies, dtype=source_masks.dtype, device=source_masks.device)
+    initial_homographies = torch.as_tensor(initial_homographies, **tensor_options)
     source_masks = source_masks.expand(*target_masks.shape[:-3], -1, -1, -1)
     homographies = pt.homography.fit_homography(source_masks, target_masks, initial_homographies)
-    probabilities = pt.warp.warp(source_masks, homographies, target_masks.shape[-2:]).clamp(1e-4, 1 - 1e-4)
-    ones = torch.ones(len(source_keypoints_tensor), 1, dtype=target_masks.dtype, device=target_masks.device)
+    output_shape = target_masks.shape[-2:]
+    probabilities = pt.warp.warp(source_masks, homographies, output_shape)
+    probabilities = probabilities.clamp(1e-4, 1 - 1e-4)
+    ones = torch.ones(len(source_keypoints_tensor), 1, **tensor_options)
     homogeneous = torch.cat((source_keypoints_tensor, ones), dim=1)
     projected = torch.einsum("kd,bhd->bkh", homogeneous, homographies)
     keypoints = projected[:, :, :2] / projected[:, :, 2:]

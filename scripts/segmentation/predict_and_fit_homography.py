@@ -134,7 +134,7 @@ def unlabelled_images(dataset_root: Path) -> list[Path]:
     masks_root = dataset_root / "masks"
     paths = []
     for image_path in sorted(images_root.glob("*/*/*.jpg")):
-        mask_path = masks_root / image_path.relative_to(images_root).with_suffix(".webp")
+        mask_path = masks_root / image_path.relative_to(images_root).with_suffix(".json")
         if not mask_path.is_file():
             paths.append(image_path)
     return paths
@@ -197,10 +197,9 @@ def save_labels(
     dataset, shard = image_relative.parts[:2]
     image_key = str(Path(*image_relative.parts[1:]))
 
-    mask_path = dataset_root / "masks" / image_relative.with_suffix(".webp")
+    mask_path = dataset_root / "masks" / image_relative.with_suffix(".json")
     mask_path.parent.mkdir(parents=True, exist_ok=True)
-    bitfield = sk.polygons.bitfield_from_masks([mask.numpy() > 0.5 for mask in masks])
-    Image.fromarray(bitfield).save(mask_path, lossless=True)
+    mask_path.write_text(json.dumps(mask_surfaces(court_name, masks), indent=2) + "\n")
 
     homography_path = dataset_root / "homography" / dataset / f"{shard}.json"
     update_json(
@@ -220,6 +219,16 @@ def save_labels(
         for position, visible in zip(keypoints, visibility, strict=True)
     ]
     update_json(keypoint_path, "keypoints", image_key, {"court": court_name, "points": points})
+
+
+def mask_surfaces(court_name: str, masks: Float[Tensor, "N H W"]) -> dict:
+    court = sk.FibaCourt if court_name == "fiba" else sk.NbaCourt
+    labels = tuple(court.planar_areas())
+    surfaces = {}
+    for label, mask in zip(labels, masks, strict=True):
+        points = sk.polygons.recover_projected_rectangle(mask.numpy() > 0.5, snap_to_borders=True)
+        surfaces[label] = [{"x": x, "y": y} for x, y in points]
+    return surfaces
 
 
 def update_json(path: Path, key: str, image_key: str, value: dict) -> None:

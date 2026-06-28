@@ -5,16 +5,16 @@ import numpy as np
 import sportkit as sk
 import torch
 import typer
-from jaxtyping import Float, UInt8
-from PIL import Image
+from jaxtyping import Float
 from torch import Tensor
 
 from perception_training.homography import centered_homography, fit_homography
 from perception_training.warp import warp
 
-app = typer.Typer(help="Fit a basketball court homography from raster bitfield masks.")
-MASK_ARGUMENT = typer.Argument(help="Raster bitfield mask WebP.")
+app = typer.Typer(help="Fit a basketball court homography from polygon mask JSON.")
+MASK_ARGUMENT = typer.Argument(help="Polygon mask JSON.")
 COURT_OPTION = typer.Option("nba", help="Court template to fit: nba or fiba.")
+RASTER_SIZE = (1280, 720)
 
 COURTS = {
     "nba": sk.NbaCourt,
@@ -28,7 +28,7 @@ def main(
     mask_path = mask.expanduser().resolve()
 
     court_template = COURTS[court]
-    labels, target_masks = load_masks(mask_path, court_template)
+    labels, target_masks = load_masks(mask_path, court_template, RASTER_SIZE)
     source_masks = load_template_masks(court_template, labels, target_masks.shape[-1])
 
     mask_multipliers = [1.5 if "3pt_area" in label or "painted_area" in label else 1.0 for label in labels]
@@ -53,18 +53,19 @@ def main(
     print(json.dumps(result, indent=2))
 
 
-def load_masks(mask_path: Path, court: sk.BasketCourt) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
-    image = Image.open(mask_path).convert("L")
-    bitfield: UInt8[np.ndarray, "H W"] = np.asarray(image, dtype=np.uint8)
+def load_masks(
+    mask_path: Path,
+    court: sk.BasketCourt,
+    size: tuple[int, int],
+) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
     mask_names = tuple(court.planar_areas())
-
-    masks = [
-        torch.tensor(mask.astype(np.float32))
-        for mask in sk.polygons.bitfield_masks(bitfield, mask_names).values()
-    ]
-
-    return mask_names, torch.stack(masks)
-
+    data = json.loads(mask_path.read_text())
+    surfaces = {
+        label: [(point["x"], point["y"]) for point in points]
+        for label, points in data.items()
+    }
+    masks = sk.polygons.rasterize_masks(surfaces, mask_names, size)
+    return mask_names, torch.tensor(masks.astype(np.float32))
 
 def load_template_masks(
     court_template: sk.BasketCourt,

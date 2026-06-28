@@ -107,7 +107,7 @@ class CourtDataset(Dataset):
         image = image.resize((width, height), Image.Resampling.BILINEAR)
         sample: NumpySample = {"image": np.array(image, dtype=np.uint8)}
         if self.load_masks:
-            sample["mask"] = read_mask(annotation_path(self.root, image_path, "masks", ".webp"), self.image_size)
+            sample["mask"] = read_mask(annotation_path(self.root, image_path, "masks", ".json"), self.image_size)
         if self.load_keypoints:
             keypoints, visibility = read_keypoints(annotation_path(self.root, image_path, "keypoints", ".json"))
             sample["keypoints"] = keypoints
@@ -132,10 +132,13 @@ def annotation_path(root: Path, image_path: Path, annotation_dir: str, suffix: s
 
 def read_mask(path: Path, image_size: tuple[int, int]) -> Float[np.ndarray, "H W N"]:
     height, width = image_size
-    bitfield = Image.open(path).convert("L").resize((width, height), Image.Resampling.NEAREST)
-    bitfield_array = np.array(bitfield, dtype=np.uint8)
-    masks = [(bitfield_array & (1 << bit)) > 0 for bit in range(len(BASKETBALL_MASK_NAMES))]
-    return np.stack(masks, axis=-1).astype(np.float32)
+    data = json.loads(path.read_text())
+    surfaces = {
+        label: [(point["x"], point["y"]) for point in points]
+        for label, points in data.items()
+    }
+    masks = sk.polygons.rasterize_masks(surfaces, BASKETBALL_MASK_NAMES, (width, height))
+    return np.moveaxis(masks, 0, -1).astype(np.float32)
 
 
 def read_keypoints(path: Path) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarray, "*K"]]:

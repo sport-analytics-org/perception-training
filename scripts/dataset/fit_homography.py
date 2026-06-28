@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-import courts_and_fields as cnf
 import numpy as np
+import sportkit as sk
 import torch
 import typer
 from jaxtyping import Float, UInt8
@@ -17,8 +17,8 @@ MASK_ARGUMENT = typer.Argument(help="Raster bitfield mask WebP.")
 COURT_OPTION = typer.Option("nba", help="Court template to fit: nba or fiba.")
 
 COURTS = {
-    "nba": cnf.NbaCourt,
-    "fiba": cnf.FibaCourt,
+    "nba": sk.NbaCourt,
+    "fiba": sk.FibaCourt,
 }
 @app.command()
 def main(
@@ -53,21 +53,21 @@ def main(
     print(json.dumps(result, indent=2))
 
 
-def load_masks(mask_path: Path, court: cnf.BasketCourt) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
+def load_masks(mask_path: Path, court: sk.BasketCourt) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
     image = Image.open(mask_path).convert("L")
     bitfield: UInt8[np.ndarray, "H W"] = np.asarray(image, dtype=np.uint8)
     mask_names = tuple(court.planar_areas())
 
-    masks = []
-    for index in range(len(mask_names)):
-        mask = (bitfield & np.uint8(1 << index)) > 0
-        masks.append(torch.tensor(mask.astype(np.float32)))
+    masks = [
+        torch.tensor(mask.astype(np.float32))
+        for mask in sk.polygons.bitfield_masks(bitfield, mask_names).values()
+    ]
 
     return mask_names, torch.stack(masks)
 
 
 def load_template_masks(
-    court_template: cnf.BasketCourt,
+    court_template: sk.BasketCourt,
     labels: tuple[str, ...],
     width: int,
 ) -> Float[Tensor, "N H W"]:

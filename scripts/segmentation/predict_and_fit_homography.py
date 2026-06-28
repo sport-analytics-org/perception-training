@@ -3,11 +3,11 @@ import json
 import random
 from pathlib import Path
 
-import courts_and_fields as cnf
 import numpy as np
+import sportkit as sk
 import torch
 import typer
-from jaxtyping import Bool, Float, UInt8
+from jaxtyping import Bool, Float
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
 from torch import Tensor
@@ -81,7 +81,7 @@ def main(
 
         is_fiba_dataset = dataset.startswith("fiba_")
         court_name = "fiba" if is_fiba_dataset else "nba"
-        court = cnf.FibaCourt if is_fiba_dataset else cnf.NbaCourt
+        court = sk.FibaCourt if is_fiba_dataset else sk.NbaCourt
         homography_mask_names = tuple(court.planar_areas())
         homography_probabilities = probabilities[: len(homography_mask_names)]
         visible = visibility >= 0.5
@@ -152,7 +152,7 @@ def sample_by_dataset(image_paths: list[Path], count: int, datasets: tuple[str, 
 
 
 def render_at_image_size(
-    court: cnf.BasketCourt,
+    court: sk.BasketCourt,
     mask_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
     size: tuple[int, int],
@@ -164,7 +164,7 @@ def render_at_image_size(
 
 
 def project_keypoints(
-    court: cnf.BasketCourt,
+    court: sk.BasketCourt,
     keypoint_names: tuple[str, ...],
     matrix: Float[np.ndarray, "3 3"],
 ) -> tuple[Float[np.ndarray, "K 2"], Bool[np.ndarray, "K"]]:
@@ -199,7 +199,8 @@ def save_labels(
 
     mask_path = dataset_root / "masks" / image_relative.with_suffix(".webp")
     mask_path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(bitfield(masks)).save(mask_path, lossless=True)
+    bitfield = sk.polygons.bitfield_from_masks([mask.numpy() > 0.5 for mask in masks])
+    Image.fromarray(bitfield).save(mask_path, lossless=True)
 
     homography_path = dataset_root / "homography" / dataset / f"{shard}.json"
     update_json(
@@ -219,13 +220,6 @@ def save_labels(
         for position, visible in zip(keypoints, visibility, strict=True)
     ]
     update_json(keypoint_path, "keypoints", image_key, {"court": court_name, "points": points})
-
-
-def bitfield(masks: Float[Tensor, "N H W"]) -> UInt8[np.ndarray, "H W"]:
-    output = np.zeros(masks.shape[-2:], dtype=np.uint8)
-    for index, mask in enumerate(masks):
-        output[mask.numpy() > 0.5] |= np.uint8(1 << index)
-    return output
 
 
 def update_json(path: Path, key: str, image_key: str, value: dict) -> None:

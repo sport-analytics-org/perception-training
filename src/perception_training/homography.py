@@ -1,6 +1,6 @@
-import courts_and_fields as cnf
 import cv2
 import numpy as np
+import sportkit as sk
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
@@ -14,7 +14,7 @@ DEFAULT_MAX_ITERATIONS = 120
 
 
 def fit_court(
-    court: cnf.BasketCourt,
+    court: sk.BasketCourt,
     mask_names: tuple[str, ...],
     keypoint_names: tuple[str, ...],
     probabilities: Float[Tensor, "N H W"],
@@ -102,7 +102,7 @@ def centered_homography() -> Float[np.ndarray, "3 3"]:
     return find_keypoints_homography(CENTERED_SOURCE, CENTERED_TARGET)
 
 
-def normalized_keypoints(court: cnf.BasketCourt, labels: tuple[str, ...]) -> Float[np.ndarray, "K 2"]:
+def normalized_keypoints(court: sk.BasketCourt, labels: tuple[str, ...]) -> Float[np.ndarray, "K 2"]:
     points_by_name = court.keypoints()
     points = np.array([points_by_name[name] for name in labels], dtype=np.float64)
     x = (points[:, 0] + court.half_length) / court.length
@@ -111,7 +111,7 @@ def normalized_keypoints(court: cnf.BasketCourt, labels: tuple[str, ...]) -> Flo
 
 
 def template_masks(
-    court: cnf.BasketCourt,
+    court: sk.BasketCourt,
     labels: tuple[str, ...],
     width: int,
     device: torch.device,

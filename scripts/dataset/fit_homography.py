@@ -20,6 +20,8 @@ COURTS = {
     "nba": sk.NbaCourt,
     "fiba": sk.FibaCourt,
 }
+
+
 @app.command()
 def main(
     mask: Path = MASK_ARGUMENT,
@@ -66,6 +68,7 @@ def load_masks(
     }
     masks = sk.polygons.rasterize_masks(surfaces, mask_names, size)
     return mask_names, torch.tensor(masks.astype(np.float32))
+
 
 def load_template_masks(
     court_template: sk.BasketCourt,

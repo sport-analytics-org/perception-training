@@ -1530,7 +1530,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "rfdetr", extras = ["train"], specifier = ">=1.7.1" },
-    { name = "sportkit", git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=refactor-sportkit-polygons" },
+    { name = "sportkit", git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=add-sportkit-polygons" },
     { name = "supervision", specifier = ">=0.28.0" },
     { name = "timm", specifier = ">=1.0.27" },
     { name = "torch", specifier = ">=2.4" },
@@ -2429,7 +2429,7 @@ wheels = [
 [[package]]
 name = "sportkit"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=refactor-sportkit-polygons#0f4ad9fa15111b6ec48783e2d11b2c6f6f965600" }
+source = { git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=add-sportkit-polygons#f131d8159885b7a54523e1e77bcacbd17832e898" }
 dependencies = [
     { name = "jaxtyping" },
     { name = "loguru" },

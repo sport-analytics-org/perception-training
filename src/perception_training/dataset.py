@@ -136,7 +136,7 @@ def read_mask(path: Path, image_size: tuple[int, int]) -> Float[np.ndarray, "H W
     polygons = {label: sk.polygons.Polygon.from_dict(points) for label, points in data.items()}
     masks = np.zeros((len(BASKETBALL_MASK_NAMES), height, width), dtype=bool)
     for index, label in enumerate(BASKETBALL_MASK_NAMES):
-        masks[index] = polygons[label].rasterize((width, height))
+        masks[index] = polygons[label].rasterize(width, height)
     return np.moveaxis(masks, 0, -1).astype(np.float32)
 
 

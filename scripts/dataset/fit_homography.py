@@ -30,7 +30,9 @@ def main(
     mask_path = mask.expanduser().resolve()
 
     court_template = COURTS[court]
-    labels, target_masks = load_masks(mask_path, RASTER_SIZE)
+    target_masks_by_label = load_masks(mask_path, RASTER_SIZE)
+    labels = tuple(target_masks_by_label)
+    target_masks = torch.stack(tuple(target_masks_by_label.values()))
     source_masks = load_template_masks(court_template, labels, target_masks.shape[-1])
 
     mask_multipliers = [1.5 if "3pt_area" in label or "painted_area" in label else 1.0 for label in labels]
@@ -58,13 +60,13 @@ def main(
 def load_masks(
     mask_path: Path,
     size: tuple[int, int],
-) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
+) -> dict[str, Float[Tensor, "H W"]]:
     data = json.loads(mask_path.read_text())
-    labels = tuple(data)
-    polygons = {label: sk.polygons.Polygon.from_dict(points) for label, points in data.items()}
     width, height = size
-    masks = np.stack([polygons[label].rasterize(width, height) for label in labels])
-    return labels, torch.tensor(masks.astype(np.float32))
+    return {
+        label: torch.tensor(sk.polygons.Polygon.from_dict(points).rasterize(width, height).astype(np.float32))
+        for label, points in data.items()
+    }
 
 
 def load_template_masks(

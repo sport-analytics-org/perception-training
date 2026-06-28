@@ -227,7 +227,7 @@ def mask_surfaces(court_name: str, masks: Float[Tensor, "N H W"]) -> dict:
     surfaces = {}
     for label, mask in zip(labels, masks, strict=True):
         polygon = sk.polygons.trace_mask(mask.numpy() > 0.5)
-        surfaces[label] = polygon.to_json()
+        surfaces[label] = polygon.to_dict()
     return surfaces
 
 

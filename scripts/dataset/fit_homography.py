@@ -62,7 +62,7 @@ def load_masks(
 ) -> tuple[tuple[str, ...], Float[Tensor, "N H W"]]:
     mask_names = tuple(court.planar_areas())
     data = json.loads(mask_path.read_text())
-    polygons = {label: sk.polygons.Polygon.from_json(points) for label, points in data.items()}
+    polygons = {label: sk.polygons.Polygon.from_dict(points) for label, points in data.items()}
     masks = np.stack([polygons[label].rasterize(size) for label in mask_names])
     return mask_names, torch.tensor(masks.astype(np.float32))
 

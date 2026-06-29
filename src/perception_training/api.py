@@ -24,6 +24,7 @@ COURTS: dict[CourtType, sk.courts.BasketCourt] = {
     "nba": sk.courts.NbaCourt,
     "fiba": sk.courts.FibaCourt,
 }
+MASK_TRACE_TOLERANCE = 0.001
 
 
 class Point(BaseModel):
@@ -179,7 +180,7 @@ def mask_polygons(masks: Bool[np.ndarray, "N H W"], labels: tuple[str, ...]) -> 
     for label, mask in zip(labels, masks, strict=True):
         if mask.sum() < 3:
             continue
-        traced = sk.polygons.trace_mask(mask)
+        traced = sk.polygons.trace_mask(mask, tolerance=MASK_TRACE_TOLERANCE)
         points = [Point(x=x, y=y) for x, y in traced.points]
         polygons.append(Polygon(label=label, points=points))
     return polygons

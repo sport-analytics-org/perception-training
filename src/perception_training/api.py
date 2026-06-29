@@ -25,6 +25,7 @@ COURTS: dict[CourtType, sk.courts.BasketCourt] = {
     "fiba": sk.courts.FibaCourt,
 }
 MASK_TRACE_TOLERANCE = 0.001
+RECTANGLE_MASK_SUFFIXES = ("_court", "painted_area", "_backboard")
 
 
 class Point(BaseModel):
@@ -180,10 +181,20 @@ def mask_polygons(masks: Bool[np.ndarray, "N H W"], labels: tuple[str, ...]) -> 
     for label, mask in zip(labels, masks, strict=True):
         if mask.sum() < 3:
             continue
-        traced = sk.polygons.trace_mask(mask, tolerance=MASK_TRACE_TOLERANCE)
+        traced = sk.polygons.trace_mask(
+            mask,
+            tolerance=MASK_TRACE_TOLERANCE,
+            source_shape=mask_source_shape(label),
+        )
         points = [Point(x=x, y=y) for x, y in traced.points]
         polygons.append(Polygon(label=label, points=points))
     return polygons
+
+
+def mask_source_shape(label: str) -> Literal["any", "rectangle"]:
+    if label.endswith(RECTANGLE_MASK_SUFFIXES):
+        return "rectangle"
+    return "any"
 
 
 def fit_homography(

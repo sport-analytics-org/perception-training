@@ -41,4 +41,4 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["F722", "F821"]
 
 [tool.uv.sources]
-sportkit = { git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git", branch = "main" }
+sportkit = { git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git", branch = "codex/rectangle-mask-tracing" }

@@ -1,9 +1,9 @@
 import dataclasses
 import json
-import tarfile
 from pathlib import Path
 
 import numpy as np
+import sportkit as sk
 import typer
 from loguru import logger
 from tqdm import tqdm
@@ -76,44 +76,42 @@ def export_shard(
     output_root: Path,
     options: ExportOptions,
 ) -> tuple[int, int]:
-    with tarfile.open(shard_path) as shard:
-        members = {member.name: member for member in shard.getmembers() if member.isfile()}
-        metadata = read_json(shard, members, f"metadata/{shard_id(shard_path)}.json")
-        keypoints = read_json(shard, members, f"keypoints/{shard_id(shard_path)}.json").get("keypoints", {})
-        reviewed_keys = reviewed_images(metadata, members)
-        detection_keys = {Path(name).with_suffix(".jpg").name for name in members if name.startswith("detections/")}
-        export_keys = set()
-        if options.masks:
-            export_keys |= reviewed_keys
+    members = sk.tar.read_members(shard_path)
+    metadata = read_json(members, f"metadata/{shard_id(shard_path)}.json")
+    keypoints = read_json(members, f"keypoints/{shard_id(shard_path)}.json").get("keypoints", {})
+    reviewed_keys = reviewed_images(metadata, set(members))
+    detection_keys = {Path(name).with_suffix(".jpg").name for name in members if name.startswith("detections/")}
+    export_keys = set()
+    if options.masks:
+        export_keys |= reviewed_keys
+    if options.detections:
+        export_keys |= detection_keys
+
+    copied = 0
+    skipped = 0
+    for image_key in sorted(export_keys):
+        image_name = Path(image_key).name
+        mask_name = f"masks/{Path(image_name).with_suffix('.json')}"
+        keypoint_data = keypoints.get(image_key)
+        should_export_mask = options.masks and image_key in reviewed_keys
+        if should_export_mask and options.keypoints and keypoint_data is None:
+            should_export_mask = False
+            skipped += 1
+            if not options.detections:
+                continue
+
+        name = flat_name(dataset_name, image_key)
+        (output_root / "images" / f"{name}.jpg").write_bytes(members[f"images/{image_name}"])
+        if should_export_mask:
+            (output_root / "masks" / f"{name}.json").write_bytes(members[mask_name])
+        if should_export_mask and options.keypoints:
+            output = json.dumps(keypoint_data, indent=2) + "\n"
+            (output_root / "keypoints" / f"{name}.json").write_text(output)
         if options.detections:
-            export_keys |= detection_keys
-
-        copied = 0
-        skipped = 0
-        for image_key in sorted(export_keys):
-            image_name = Path(image_key).name
-            image_member = require_member(members, f"images/{image_name}")
-            mask_name = f"masks/{Path(image_name).with_suffix('.json')}"
-            keypoint_data = keypoints.get(image_key)
-            should_export_mask = options.masks and image_key in reviewed_keys
-            if should_export_mask and options.keypoints and keypoint_data is None:
-                should_export_mask = False
-                skipped += 1
-                if not options.detections:
-                    continue
-
-            name = flat_name(dataset_name, image_key)
-            write_member(shard, image_member, output_root / "images" / f"{name}.jpg")
-            if should_export_mask:
-                mask_member = require_member(members, mask_name)
-                write_member(shard, mask_member, output_root / "masks" / f"{name}.json")
-            if should_export_mask and options.keypoints:
-                output = json.dumps(keypoint_data, indent=2) + "\n"
-                (output_root / "keypoints" / f"{name}.json").write_text(output)
-            if options.detections:
-                detections = read_json(shard, members, f"detections/{Path(image_name).with_suffix('.json')}")
-                write_detections_npz(detections, output_root / "detections" / f"{name}.npz")
-            copied += 1
+            detection_name = f"detections/{Path(image_name).with_suffix('.json')}"
+            detections = read_json(members, detection_name)
+            write_detections_npz(detections, output_root / "detections" / f"{name}.npz")
+        copied += 1
 
     return copied, skipped
 
@@ -132,17 +130,11 @@ def shard_id(path: Path) -> str:
     return path.stem[-3:]
 
 
-def read_json(shard: tarfile.TarFile, members: dict[str, tarfile.TarInfo], name: str) -> dict:
-    member = members.get(name)
-    if member is None:
-        return {}
-    file = shard.extractfile(member)
-    if file is None:
-        raise FileNotFoundError(name)
-    return json.load(file)
+def read_json(members: dict[str, bytes], name: str) -> dict:
+    return json.loads(members.get(name, b"{}"))
 
 
-def reviewed_images(metadata: dict, members: dict[str, tarfile.TarInfo]) -> set[str]:
+def reviewed_images(metadata: dict, members: set[str]) -> set[str]:
     reviews = metadata.get("reviews", {})
     if reviews:
         return {image_key for image_key, masks in reviews.items() if all(masks.values())}
@@ -153,20 +145,6 @@ def reviewed_images(metadata: dict, members: dict[str, tarfile.TarInfo]) -> set[
             if member.startswith("masks/") and member.endswith(".json")
         }
     return set()
-
-
-def require_member(members: dict[str, tarfile.TarInfo], name: str) -> tarfile.TarInfo:
-    member = members.get(name)
-    if member is None:
-        raise FileNotFoundError(name)
-    return member
-
-
-def write_member(shard: tarfile.TarFile, member: tarfile.TarInfo, output_path: Path) -> None:
-    file = shard.extractfile(member)
-    if file is None:
-        raise FileNotFoundError(member.name)
-    output_path.write_bytes(file.read())
 
 
 def write_detections_npz(data: dict, output_path: Path) -> None:

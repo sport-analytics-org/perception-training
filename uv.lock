@@ -1530,7 +1530,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "rfdetr", extras = ["train"], specifier = ">=1.7.1" },
-    { name = "sportkit", git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=codex%2Frectangle-mask-tracing" },
+    { name = "sportkit", git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=main" },
     { name = "supervision", specifier = ">=0.28.0" },
     { name = "timm", specifier = ">=1.0.27" },
     { name = "torch", specifier = ">=2.4" },
@@ -2429,7 +2429,7 @@ wheels = [
 [[package]]
 name = "sportkit"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=codex%2Frectangle-mask-tracing#2cd01d272a92f29115707d8c475b4101a2bc7a72" }
+source = { git = "ssh://git@github.com/sport-analytics-org/courts-and-fields.git?branch=main#31d2340576f751e42c7fba28a0f3bc977bca889d" }
 dependencies = [
     { name = "jaxtyping" },
     { name = "loguru" },

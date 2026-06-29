@@ -141,10 +141,7 @@ def read_mask(path: Path, image_size: tuple[int, int]) -> Float[np.ndarray, "H W
 
 def read_polygon_masks(path: Path, width: int, height: int) -> dict[str, Bool[np.ndarray, "H W"]]:
     polygons = sk.polygons.read_polygons(path)
-    masks = {}
-    for label, polygon in polygons.items():
-        masks[label] = polygon.rasterize(width, height)
-    return masks
+    return {label: polygon.rasterize(width, height) for label, polygon in polygons.items()}
 
 
 def read_keypoints(path: Path) -> tuple[Float[np.ndarray, "K 2"], Float[np.ndarray, "*K"]]:

@@ -25,6 +25,7 @@ COURTS: dict[CourtType, sk.courts.BasketCourt] = {
     "fiba": sk.courts.FibaCourt,
 }
 MASK_TRACE_TOLERANCE = 0.001
+MASK_TRACE_MAX_VERTICES = 20
 RECTANGLE_MASK_SUFFIXES = ("_court", "painted_area", "_backboard")
 
 
@@ -185,6 +186,7 @@ def mask_polygons(masks: Bool[np.ndarray, "N H W"], labels: tuple[str, ...]) -> 
             mask,
             tolerance=MASK_TRACE_TOLERANCE,
             source_shape=mask_source_shape(label),
+            max_vertices=MASK_TRACE_MAX_VERTICES,
         )
         points = [Point(x=x, y=y) for x, y in traced.points]
         polygons.append(Polygon(label=label, points=points))
